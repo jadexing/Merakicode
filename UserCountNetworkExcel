@@ -1,0 +1,108 @@
+"""
+Meraki Unique Client Count Script
+
+This Python script interacts with the Cisco Meraki Dashboard API to retrieve the unique client count for each network
+associated with a specific organization. The script prompts the user to provide the Meraki API key and organization
+number, and then lists the networks associated with the organization. The user can choose to see the unique client count
+for a specific network or for all networks. The script uses proper request throttling and pagination to collect all data
+and displays the unique client count per network. The data is also saved to a spreadsheet.
+
+Make sure you have the 'requests' and 'pandas' libraries installed. You can install them using 'pip install requests pandas'.
+
+Author: [Your Name]
+"""
+
+import requests
+import time
+import pandas as pd
+
+# Function to retrieve a list of clients from a specific network with pagination
+def get_clients(api_key, network_id, timespan):
+    url = f"https://api.meraki.com/api/v1/networks/{network_id}/clients"
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    params = {"timespan": timespan, "perPage": 100}
+    clients_list = []
+
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            clients_data = response.json()
+            clients_list.extend(clients_data)
+            if 'next' in response.links:
+                url = response.links['next']['url']
+                time.sleep(0.5)  # Throttle the requests to avoid rate-limiting
+            else:
+                break
+        else:
+            print(f"Error: Unable to fetch clients for Network ID: {network_id}")
+            break
+
+    return clients_list
+
+# Meraki API Key input
+api_key = input("Enter your Meraki API key: ")
+
+# Ask for organization number
+org_number = input("Enter the organization number: ")
+
+# Retrieve and display the networks associated with the organization
+url = f"https://api.meraki.com/api/v1/organizations/{org_number}/networks"
+headers = {"X-Cisco-Meraki-API-Key": api_key}
+response = requests.get(url, headers=headers)
+if response.status_code == 200:
+    networks_data = response.json()
+    print("\nNetworks associated with the organization:")
+    for index, network in enumerate(networks_data, start=1):
+        print(f"{index}. {network['name']} (Network ID: {network['id']})")
+
+    # Ask user to select the network for unique client count
+    while True:
+        try:
+            selected_network = int(input("\nEnter the number of the network you want to see the unique client count for (or 0 for all networks): "))
+            if 0 <= selected_network <= len(networks_data):
+                break
+            else:
+                print("Invalid input. Please enter a valid number.")
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
+
+    # Ask user for the number of days for unique client count
+    while True:
+        try:
+            days = int(input("\nEnter the number of days for unique client count (up to 30 days): "))
+            if 1 <= days <= 30:
+                break
+            else:
+                print("Invalid input. Please enter a number between 1 and 30.")
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
+
+    print("\nPlease wait while gathering data...")
+
+    # Retrieve unique client count for the selected network(s)
+    unique_clients_per_network = {}
+    if selected_network == 0:
+        for network in networks_data:
+            network_id = network['id']
+            network_name = network['name']
+            clients = get_clients(api_key, network_id, days * 24 * 60 * 60)
+            unique_clients = set(client['mac'] for client in clients)
+            unique_clients_per_network[network_name] = len(unique_clients)
+    else:
+        network_id = networks_data[selected_network - 1]['id']
+        network_name = networks_data[selected_network - 1]['name']
+        clients = get_clients(api_key, network_id, days * 24 * 60 * 60)
+        unique_clients = set(client['mac'] for client in clients)
+        unique_clients_per_network[network_name] = len(unique_clients)
+
+    # Display unique client count per network
+    print("\nUnique clients per network:")
+    for network_name, unique_clients_count in unique_clients_per_network.items():
+        print(f"{network_name}: {unique_clients_count}")
+
+    # Save data to a spreadsheet
+    df = pd.DataFrame(list(unique_clients_per_network.items()), columns=['Network', 'Unique Clients Count'])
+    df.to_excel("meraki_unique_clients.xlsx", index=False)
+    print("\nData saved to 'meraki_unique_clients.xlsx'")
+else:
+    print("Unable to fetch networks. Please check your API key and organization number.")
