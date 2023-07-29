@@ -9,7 +9,7 @@ and displays the unique client count per network. The data is also saved to a sp
 
 Make sure you have the 'requests' and 'pandas' libraries installed. You can install them using 'pip install requests pandas'.
 
-Author: [Your Name]
+Author: Jamie Price, made with ChatPT (Wi-Fi Cool Cats Blog)
 """
 
 import requests
