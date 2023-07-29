@@ -1,0 +1,106 @@
+import meraki
+import json
+import csv
+
+# Instructions:
+# Make sure to set your APIKEY in environment variable MERAKI_DASHBOARD_API_KEY.
+# Script will display and prompt you to select OrgId and NetworkId then ask for a string to match device type.
+# Partial matches allowed for device type. Example 'MR' will capture all AP models. 'MR4' will match MR44, MR46, etc.
+# To ignore specific devices, create ignorelist.csv in the same path as the script. One name or serial number per line in a single column.
+#
+# Recommended: Perform a test run with the final line commented to see what will be rebooted and what will be skipped.
+# When ready, uncomment last line to enable the rebootDevice API call.
+#
+# IMPORTANT: Devices will not reboot until the last line is uncommented.
+
+dashboard = meraki.DashboardAPI('84abfaa01dbde2e42b3ca3d187eb0db26e150586')
+
+# Read ignorelist.csv for device names or serials to skip.
+ignorelist = []
+try:
+    with open('ignorelist.csv', 'r') as file:
+        ignorelist = [row[0] for row in csv.reader(file)]
+    print('')
+    print('ignorelist.csv found and imported.')
+    print('')
+except:
+    print('')
+    print('ignorelist.csv could not be found or read. Continuing...')
+    print('')
+
+# Gather all organizations
+organizations = dashboard.organizations.getOrganizations()
+
+print('')
+print('Listing all organizations:')
+
+for org in organizations:
+    orgId = org['id']
+    orgName = org['name']
+    print(f'The OrganizationId is {orgId}, and its name is {orgName}.')
+
+print('Enter selected OrganizationId: ')
+selected_org = input()
+
+# Get networks in selected org
+try:
+    networks = dashboard.organizations.getOrganizationNetworks(organizationId=selected_org)
+except:
+    print('')
+    print('Selected org does not exist for the provided APIKEY.')
+    exit()
+
+print('')
+print('Listing all networks in selected Organization:')
+
+for net in networks:
+    netId = net['id']
+    netName = net['name']
+    print(f'The NetworkId is {netId}, and its name is {netName}.')
+
+print('')
+print('Enter selected NetworkId: ')
+selected_net = input()
+
+# Get all devices in Net
+try:
+    devices = dashboard.networks.getNetworkDevices(networkId=selected_net)
+except:
+    print('')
+    print('Selected network does not exist for the provided APIKEY.')
+    exit()
+
+# Define type of device you want to reboot.
+# Partial matches allowed. 'MR' will capture all AP models. 'MR4' will match MR44, MR46, etc.
+print('')
+print('Enter device type to reboot. ')
+print('Partial matches allowed. "MR" will capture all AP models. "MR4" will match MR44, MR46, etc.')
+print('Enter device type: ')
+devicetype = input()
+
+# Get all device types specified in devicetype variable
+devices_selected = [i for i in devices if devicetype in i['model']]
+
+print('')
+print(f'Listing all devices matching "{devicetype}" in selected network:')
+
+for dev in devices_selected:
+    devName = dev['name']
+    print(f'{devName}')
+
+print('')
+print('Continue? (Y/N): ')
+reboot = input()
+
+if reboot == 'Y' or 'y':
+    # Reboot all devices, ignoring any name or serial in ignorelist variable
+    for i in devices_selected:
+        print('')
+        if i['name'] in ignorelist:
+            print("Skipping " + i["name"] + " " + i['model'] + " " + i['serial'] + ". Name is in ignorelist.")
+            continue
+        if i['serial'] in ignorelist:
+            print("Skipping " + i["name"] + " " + i['model'] + " " + i['serial'] + ". Serial is in ignorelist.")
+            continue
+        print("Rebooting " + i["name"] + " " + i['model'] + " " + i['serial'])
+        dashboard.devices.rebootDevice(serial=i['serial'])
