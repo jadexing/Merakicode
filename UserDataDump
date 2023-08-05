@@ -1,0 +1,119 @@
+#Creates an Excel Spreadsheet that shows user ID and MAC address.
+#Does associated data drop that can be easily purged or further used by the user.
+#Created by Jamie Price with ChatGPT
+
+import requests
+import pandas as pd
+from datetime import datetime
+
+def get_api_key():
+    return input("Please enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    url = "https://api.meraki.com/api/v1/organizations"
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+
+    return response.json()
+
+def get_networks(api_key, org_id):
+    url = f"https://api.meraki.com/api/v1/organizations/{org_id}/networks"
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    networks = []
+
+    while url:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+
+        data = response.json()
+        networks.extend(data)
+
+        if 'next' in response.links:
+            url = response.links['next']['url']
+        else:
+            url = None
+
+    return networks
+
+def get_clients(api_key, network_id):
+    url = f"https://api.meraki.com/api/v1/networks/{network_id}/clients"
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    clients = []
+
+    while url:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+
+        data = response.json()
+        clients.extend(data)
+
+        if 'next' in response.links:
+            url = response.links['next']['url']
+        else:
+            url = None
+
+    return clients
+
+def get_matching_mac(api_key, network_id, mac_address):
+    url = f"https://api.meraki.com/api/v1/networks/{network_id}/clients/{mac_address}"
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+
+    return response.json()
+
+if __name__ == "__main__":
+    try:
+        api_key = get_api_key()
+        organizations = get_organizations(api_key)
+
+        print("Numbered list of organizations:")
+        for idx, org in enumerate(organizations, 1):
+            print(f"{idx}. {org['name']}")
+
+        org_choice = int(input("Please enter the number of the organization you want to choose: "))
+        selected_org_id = organizations[org_choice - 1]['id']
+
+        print("Fetching networks...")
+        networks = get_networks(api_key, selected_org_id)
+
+        print("Numbered list of networks:")
+        for idx, network in enumerate(networks, 1):
+            print(f"{idx}. {network['name']}")
+
+        network_choice = int(input("Please enter the number of the network you want to check clients for: "))
+        selected_network_id = networks[network_choice - 1]['id']
+
+        print(f"Fetching clients for network: {networks[network_choice - 1]['name']}...")
+        clients = get_clients(api_key, selected_network_id)
+
+        print("List of clients and their IDs:")
+        all_clients_data = []
+        for client in clients:
+            client_name = client['description'] if client['description'] is not None else "None"
+            client_data = {'Client Name': client_name, 'Client ID': client['id'], 'MAC Address': client['mac']}
+            all_clients_data.append(client_data)
+
+            # Get matching MAC address info
+            matching_mac_info = get_matching_mac(api_key, selected_network_id, client['mac'])
+            client_data['Matching MAC Info'] = matching_mac_info
+
+        # Save data to a CSV file with today's date and time in the filename
+        now = datetime.now()
+        date_time = now.strftime("%Y-%m-%d_%H-%M-%S")
+        csv_filename = f"{networks[network_choice - 1]['name']}_{date_time}_clients_with_mac_info.csv"
+        df = pd.DataFrame(all_clients_data).fillna("None")
+        df.to_csv(csv_filename, index=False)
+        print(f"Data has been saved to {csv_filename}.")
+
+    except requests.exceptions.HTTPError as errh:
+        print("Http Error:", errh)
+    except requests.exceptions.ConnectionError as errc:
+        print("Error Connecting:", errc)
+    except requests.exceptions.Timeout as errt:
+        print("Timeout Error:", errt)
+    except requests.exceptions.RequestException as err:
+        print("OOps: Something Else", err)
