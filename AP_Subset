@@ -1,3 +1,10 @@
+#This code takes the API key, displays the org
+#Choose the org, networks are displayed.
+#Choose a network
+#Display APs for the network
+#Chose a subset of APs
+
+
 import requests
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
