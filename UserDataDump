@@ -85,7 +85,7 @@ if __name__ == "__main__":
         for idx, network in enumerate(networks, 1):
             print(f"{idx}. {network['name']}")
 
-        network_choice = int(input("Please enter the number of the network you want to check clients for: "))
+        network_choice = int(input("Please enter the number of the network you want to check clients for (please be patient, this could take some time): "))
         selected_network_id = networks[network_choice - 1]['id']
 
         print(f"Fetching clients for network: {networks[network_choice - 1]['name']}...")
