@@ -71,13 +71,13 @@ def main():
         for idx, network in enumerate(networks, 1):
             print(f"{idx}. {network['name']}")
 
-        network_choice = int(input("Please enter the number of the network you want to check clients for: "))
+        network_choice = int(input("Please enter the number of the network you want to check clients for (please be patient, this may take some time): "))
         selected_network_id = networks[network_choice - 1]['id']
 
         print(f"Fetching clients for network: {networks[network_choice - 1]['name']}...")
         clients = get_clients(api_key, selected_network_id)
 
-        print("Please wait for data. This could take some time:")
+        print("Please see export:")
         all_clients_data = []
         for client in clients:
             client_name = client['description'] if client['description'] is not None else "None"
