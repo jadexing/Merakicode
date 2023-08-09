@@ -1,0 +1,106 @@
+import requests
+from datetime import datetime, timedelta
+import pandas as pd
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()  # Raise an exception for unsuccessful API calls
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+def get_networks(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()  # Raise an exception for unsuccessful API calls
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_networks(networks):
+    print("Networks:")
+    for idx, network in enumerate(networks, 1):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+
+def get_latency_stats(api_key, network_id, t0, t1):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    params = {
+        't0': t0,
+        't1': t1
+    }
+    try:
+        response = requests.get(BASE_URL + f'networks/{network_id}/wireless/clients/latencyStats', headers=headers, params=params)
+        response.raise_for_status()  # Raise an exception for unsuccessful API calls
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def main():
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    
+    if organizations:
+        if len(organizations) == 1:
+            print(f"Only one organization available: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+            selected_org_id = organizations[0]['id']
+        else:
+            display_organizations(organizations)
+            org_choice = int(input("Please enter the number of your organization: "))
+            selected_org_id = organizations[org_choice - 1]['id']
+
+        networks = get_networks(api_key, selected_org_id)
+        if networks:
+            display_networks(networks)
+            
+            network_choice = int(input("Please enter the number of the network you want to fetch latency stats for: "))
+            selected_network_id = networks[network_choice - 1]['id']
+            
+            time_span_days = int(input("Please enter the time span in days: "))
+            t1 = datetime.now()
+            t0 = t1 - timedelta(days=time_span_days)
+            
+            t0_str = t0.strftime('%Y-%m-%dT%H:%M:%SZ')
+            t1_str = t1.strftime('%Y-%m-%dT%H:%M:%SZ')
+            
+            print(f"Fetching latency stats for network: {networks[network_choice - 1]['name']}...")
+            latency_stats = get_latency_stats(api_key, selected_network_id, t0_str, t1_str)
+
+            # Export latency stats data to a CSV file
+            now = datetime.now()
+            date_time = now.strftime("%Y-%m-%d_%H-%M-%S")
+            csv_filename = f"{networks[network_choice - 1]['name']}_{date_time}_latency_stats.csv"
+            df = pd.DataFrame(latency_stats)
+            df.to_csv(csv_filename, index=False)
+            print(f"Latency stats data has been saved to {csv_filename}")
+
+            # Display Meraki GET statements performed
+            print("Meraki GET Statements Performed:")
+            print(f"GET organizations: {BASE_URL + 'organizations'}")
+            print(f"GET networks: {BASE_URL + f'organizations/{selected_org_id}/networks'}")
+            print(f"GET latency stats: {BASE_URL + f'networks/{selected_network_id}/wireless/clients/latencyStats'}")
+
+if __name__ == "__main__":
+    main()
