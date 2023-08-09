@@ -1,0 +1,91 @@
+import requests
+import time
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+def get_networks(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_networks(networks):
+    print("Networks:")
+    for idx, network in enumerate(networks, 1):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+
+def get_health_info(api_key, network_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    url = BASE_URL + f'networks/{network_id}/wireless/clients/healthScores'
+    
+    # Add delay to avoid throttling
+    time.sleep(1)
+    
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+def main():
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    
+    if organizations:
+        if len(organizations) == 1:
+            print(f"Only one organization available: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+            selected_org_id = organizations[0]['id']
+        else:
+            display_organizations(organizations)
+            org_choice = int(input("Please enter the number of your organization: "))
+            selected_org_id = organizations[org_choice - 1]['id']
+
+        networks = get_networks(api_key, selected_org_id)
+        if networks:
+            display_networks(networks)
+            
+            network_choice = int(input("Please enter the number of the network you want to check clients for: "))
+            selected_network_id = networks[network_choice - 1]['id']
+            
+            try:
+                health_info = get_health_info(api_key, selected_network_id)
+                print("Network Health Information:")
+                print(health_info)
+            except requests.exceptions.HTTPError as errh:
+                print("Http Error:", errh)
+            except requests.exceptions.ConnectionError as errc:
+                print("Error Connecting:", errc)
+            except requests.exceptions.Timeout as errt:
+                print("Timeout Error:", errt)
+            except requests.exceptions.RequestException as err:
+                print("OOps: Something Else", err)
+
+if __name__ == "__main__":
+    main()
