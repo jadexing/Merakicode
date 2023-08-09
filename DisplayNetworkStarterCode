@@ -43,11 +43,15 @@ def display_networks(networks):
 def main():
     api_key = get_api_key()
     organizations = get_organizations(api_key)
+    
     if organizations:
-        display_organizations(organizations)
-        
-        org_choice = int(input("Please enter the number of your organization: "))
-        selected_org_id = organizations[org_choice - 1]['id']
+        if len(organizations) == 1:
+            print(f"Only one organization available: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+            selected_org_id = organizations[0]['id']
+        else:
+            display_organizations(organizations)
+            org_choice = int(input("Please enter the number of your organization: "))
+            selected_org_id = organizations[org_choice - 1]['id']
 
         networks = get_networks(api_key, selected_org_id)
         if networks:
