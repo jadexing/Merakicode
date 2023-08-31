@@ -1,5 +1,6 @@
 """
 Meraki Live and Unique Client Count Script
+Unique Clients are counted over 30 days.
 
 This may take some time depending on your organizations.
 
