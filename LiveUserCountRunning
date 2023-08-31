@@ -1,11 +1,11 @@
 """
 Meraki Live Client Count Script
 
-This Python script interacts with the Cisco Meraki Dashboard API to retrieve the live client counts and their associated
-AP names for a specific network associated with a specific organization. The script prompts the user to provide the Meraki API key,
-organization number, and then lists the networks associated with the organization. The user can choose to see the live client counts
-and their associated AP names for a specific network. The script uses proper request throttling and pagination to collect all data
-and displays the live client counts and AP names for the chosen network. The data is also saved to a spreadsheet.
+This Python script interacts with the Cisco Meraki Dashboard API to retrieve the live client counts for each network
+associated with a specific organization. The script prompts the user to provide the Meraki API key and organization
+number, and then lists the networks associated with the organization. The user can choose to see the live client counts
+for a specific network or for all networks. The script uses proper request throttling and pagination to collect all data
+and displays the live client counts per network. The data is also saved to a spreadsheet.
 
 Make sure you have the 'requests' and 'pandas' libraries installed. You can install them using 'pip install requests pandas'.
 
@@ -58,8 +58,8 @@ if response.status_code == 200:
     # Ask user to select the network for live client counts
     while True:
         try:
-            selected_network = int(input("\nEnter the number of the network you want to see the live client counts for: "))
-            if 1 <= selected_network <= len(networks_data):
+            selected_network = int(input("\nEnter the number of the network you want to see the live client counts for (or 0 for all networks): "))
+            if 0 <= selected_network <= len(networks_data):
                 break
             else:
                 print("Invalid input. Please enter a valid number.")
@@ -68,29 +68,34 @@ if response.status_code == 200:
 
     print("\nPlease wait while gathering data...")
 
-    # Retrieve live client counts and AP names for the selected network
-    network_id = networks_data[selected_network - 1]['id']
-    network_name = networks_data[selected_network - 1]['name']
-    live_clients = get_live_clients(api_key, network_id)
+    # Retrieve live client counts for the selected network(s)
+    live_clients_per_network = {}
+    total_live_clients = 0
 
-    # Create a dictionary to store live clients and their associated AP names
-    live_clients_info = {}
+    if selected_network == 0:
+        for network in networks_data:
+            network_id = network['id']
+            network_name = network['name']
+            live_clients = get_live_clients(api_key, network_id)
+            live_clients_per_network[network_name] = len(live_clients)
+            total_live_clients += len(live_clients)
+            print(f"{network_name}: Live Clients - {len(live_clients)}")
 
-    # Retrieve AP names for each live client
-    for client in live_clients:
-        client_mac = client['mac']
-        ap_name = client.get('apName', 'N/A')  # Default to 'N/A' if no AP name is available
-        live_clients_info[client_mac] = ap_name
+    else:
+        network_id = networks_data[selected_network - 1]['id']
+        network_name = networks_data[selected_network - 1]['name']
+        live_clients = get_live_clients(api_key, network_id)
+        live_clients_per_network[network_name] = len(live_clients)
+        total_live_clients += len(live_clients)
+        print(f"{network_name}: Live Clients - {len(live_clients)}")
 
-    # Display live client counts and associated AP names for the chosen network
-    print(f"Live Clients and Associated AP Names for {network_name}:")
-    for client_mac, ap_name in live_clients_info.items():
-        print(f"Client MAC: {client_mac}, AP Name: {ap_name}")
+    # Display total live client counts
+    print("\nTotal Live Clients:", total_live_clients)
 
     # Save data to a spreadsheet
-    df = pd.DataFrame(live_clients_info.items(), columns=['Client MAC', 'AP Name'])
-    df.to_excel("meraki_live_client_ap_names.xlsx", index=False)
-    print("\nData saved to 'meraki_live_client_ap_names.xlsx'")
+    df = pd.DataFrame(list(live_clients_per_network.items()), columns=['Network', 'Live Clients Count'])
+    df.to_excel("meraki_live_client_counts.xlsx", index=False)
+    print("\nData saved to 'meraki_live_client_counts.xlsx'")
 
 else:
     print("Unable to fetch networks. Please check your API key and organization number.")
