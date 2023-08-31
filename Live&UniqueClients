@@ -1,6 +1,8 @@
 """
 Meraki Live and Unique Client Count Script
 
+This may take some time depending on your organizations.
+
 This Python script interacts with the Cisco Meraki Dashboard API to retrieve the live and unique client counts for each network
 associated with a specific organization. The script prompts the user to provide the Meraki API key and organization
 number, and then lists the networks associated with the organization. The user can choose to see the live and unique client counts
@@ -39,6 +41,29 @@ def get_live_clients(api_key, network_id):
 
     return clients_list
 
+# Function to retrieve a list of unique clients from a specific network with pagination
+def get_unique_clients(api_key, network_id):
+    url = f"https://api.meraki.com/api/v1/networks/{network_id}/clients?timespan=2592000"
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    params = {"perPage": 100}
+    clients_list = []
+
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            clients_data = response.json()
+            clients_list.extend(client['mac'] for client in clients_data)
+            if 'next' in response.links:
+                url = response.links['next']['url']
+                time.sleep(0.5)  # Throttle the requests to avoid rate-limiting
+            else:
+                break
+        else:
+            print(f"Error: Unable to fetch unique clients for Network ID: {network_id}")
+            break
+
+    return clients_list
+
 # Meraki API Key input
 api_key = input("Enter your Meraki API key: ")
 
@@ -71,44 +96,39 @@ if response.status_code == 200:
     # Retrieve live and unique client counts for the selected network(s)
     live_clients_per_network = {}
     unique_clients_per_network = {}
+    total_live_clients = 0
+    total_unique_clients = 0
+
     if selected_network == 0:
         for network in networks_data:
             network_id = network['id']
             network_name = network['name']
             live_clients = get_live_clients(api_key, network_id)
             live_clients_per_network[network_name] = len(live_clients)
+            total_live_clients += len(live_clients)
 
             # Retrieve unique client count
-            url_unique = f"https://api.meraki.com/api/v1/networks/{network_id}/clients?timespan=2592000"
-            response_unique = requests.get(url_unique, headers=headers)
-            if response_unique.status_code == 200:
-                clients_data_unique = response_unique.json()
-                unique_clients = set(client['mac'] for client in clients_data_unique)
-                unique_clients_per_network[network_name] = len(unique_clients)
-            else:
-                print(f"Error: Unable to fetch unique clients for Network ID: {network_id}")
+            unique_clients = get_unique_clients(api_key, network_id)
+            unique_clients_per_network[network_name] = len(unique_clients)
+            total_unique_clients += len(unique_clients)
+            print(f"{network_name}: Live Clients - {len(live_clients)}, Unique Clients - {len(unique_clients)}")
+
     else:
         network_id = networks_data[selected_network - 1]['id']
         network_name = networks_data[selected_network - 1]['name']
         live_clients = get_live_clients(api_key, network_id)
         live_clients_per_network[network_name] = len(live_clients)
+        total_live_clients += len(live_clients)
 
         # Retrieve unique client count
-        url_unique = f"https://api.meraki.com/api/v1/networks/{network_id}/clients?timespan=2592000"
-        response_unique = requests.get(url_unique, headers=headers)
-        if response_unique.status_code == 200:
-            clients_data_unique = response_unique.json()
-            unique_clients = set(client['mac'] for client in clients_data_unique)
-            unique_clients_per_network[network_name] = len(unique_clients)
-        else:
-            print(f"Error: Unable to fetch unique clients for Network ID: {network_id}")
+        unique_clients = get_unique_clients(api_key, network_id)
+        unique_clients_per_network[network_name] = len(unique_clients)
+        total_unique_clients += len(unique_clients)
+        print(f"{network_name}: Live Clients - {len(live_clients)}, Unique Clients - {len(unique_clients)}")
 
-    # Display live and unique client counts per network
-    print("\nLive and Unique clients per network:")
-    for network_name in live_clients_per_network:
-        live_count = live_clients_per_network[network_name]
-        unique_count = unique_clients_per_network.get(network_name, 0)
-        print(f"{network_name}: Live Clients - {live_count}, Unique Clients - {unique_count}")
+    # Display total live and unique client counts
+    print("\nTotal Live Clients:", total_live_clients)
+    print("Total Unique Clients:", total_unique_clients)
 
     # Save data to a spreadsheet
     df = pd.DataFrame(list(live_clients_per_network.items()), columns=['Network', 'Live Clients Count'])
