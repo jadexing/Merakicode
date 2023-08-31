@@ -1,0 +1,123 @@
+"""
+Meraki Live Client Count Script
+
+This Python script interacts with the Cisco Meraki Dashboard API to retrieve the live client counts for each network
+associated with a specific organization. The script prompts the user to provide the Meraki API key and organization
+number, and then lists the networks associated with the organization. The user can choose to see the live client counts
+for a specific network or for all networks. The script uses proper request throttling and pagination to collect all data
+and displays the live client counts per network. The data is also saved to a spreadsheet.
+
+Make sure you have the 'requests' and 'pandas' libraries installed. You can install them using 'pip install requests pandas'.
+
+Author: Jamie Price, made with ChatPT (Wi-Fi Cool Cats Blog)
+"""
+
+import requests
+import time
+import pandas as pd
+
+# Function to retrieve a list of live clients from a specific network with pagination
+def get_live_clients(api_key, network_id):
+    url = f"https://api.meraki.com/api/v1/networks/{network_id}/clients"
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    params = {"perPage": 100}
+    clients_list = []
+
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            clients_data = response.json()
+            clients_list.extend(client for client in clients_data if client.get('status') == 'Online')
+            if 'next' in response.links:
+                url = response.links['next']['url']
+                time.sleep(0.5)  # Throttle the requests to avoid rate-limiting
+            else:
+                break
+        else:
+            print(f"Error: Unable to fetch clients for Network ID: {network_id}")
+            break
+
+    return clients_list
+
+# Meraki API Key input
+api_key = input("Enter your Meraki API key: ")
+
+# Retrieve and display the organizations associated with the API key
+org_url = "https://api.meraki.com/api/v1/organizations"
+headers = {"X-Cisco-Meraki-API-Key": api_key}
+org_response = requests.get(org_url, headers=headers)
+
+if org_response.status_code == 200:
+    org_data = org_response.json()
+    if len(org_data) == 1:
+        org_number = org_data[0]['id']
+    else:
+        print("\nOrganizations associated with the API key:")
+        for index, org in enumerate(org_data, start=1):
+            print(f"{index}. {org['name']} (Organization ID: {org['id']})")
+
+        # Ask user to select the organization number
+        while True:
+            try:
+                selected_org = int(input("\nEnter the number of the organization you want to use: "))
+                if 1 <= selected_org <= len(org_data):
+                    org_number = org_data[selected_org - 1]['id']
+                    break
+                else:
+                    print("Invalid input. Please enter a valid number.")
+            except ValueError:
+                print("Invalid input. Please enter a valid number.")
+else:
+    print("Unable to fetch organizations. Please check your API key.")
+
+# Retrieve and display the networks associated with the selected organization
+url = f"https://api.meraki.com/api/v1/organizations/{org_number}/networks"
+response = requests.get(url, headers=headers)
+
+if response.status_code == 200:
+    networks_data = response.json()
+    print("\nNetworks associated with the organization:")
+    for index, network in enumerate(networks_data, start=1):
+        print(f"{index}. {network['name']} (Network ID: {network['id']})")
+
+    # Ask user to select the network for live client counts
+    while True:
+        try:
+            selected_network = int(input("\nEnter the number of the network you want to see the live client counts for (or 0 for all networks): "))
+            if 0 <= selected_network <= len(networks_data):
+                break
+            else:
+                print("Invalid input. Please enter a valid number.")
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
+
+    print("\nPlease wait while gathering data...")
+
+    # Retrieve live client counts for the selected network(s)
+    live_clients_per_network = {}
+    total_live_clients = 0
+
+    if selected_network == 0:
+        for network in networks_data:
+            network_id = network['id']
+            network_name = network['name']
+            live_clients = get_live_clients(api_key, network_id)
+            live_clients_per_network[network_name] = len(live_clients)
+            total_live_clients += len(live_clients)
+            print(f"{network_name}: Live Clients - {len(live_clients)}")
+
+    else:
+        network_id = networks_data[selected_network - 1]['id']
+        network_name = networks_data[selected_network - 1]['name']
+        live_clients = get_live_clients(api_key, network_id)
+        live_clients_per_network[network_name] = len(live_clients)
+        total_live_clients += len(live_clients)
+        print(f"{network_name}: Live Clients - {len(live_clients)}")
+
+    # Display total live client counts
+    print("\nTotal Live Clients:", total_live_clients)
+
+    # Save data to a spreadsheet
+    df = pd.DataFrame(list(live_clients_per_network.items()), columns=['Network', 'Live Clients Count'])
+    df.to_excel("meraki_live_client_counts.xlsx", index=False)
+    print("\n
