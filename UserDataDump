@@ -96,19 +96,28 @@ if __name__ == "__main__":
         for client in clients:
             client_name = client['description'] if client['description'] is not None else "None"
             client_data = {'Client Name': client_name, 'Client ID': client['id'], 'MAC Address': client['mac']}
-            all_clients_data.append(client_data)
-
+            
             # Get matching MAC address info
             matching_mac_info = get_matching_mac(api_key, selected_network_id, client['mac'])
-            client_data['Matching MAC Info'] = matching_mac_info
+            
+            # Include separate columns for Matching MAC Info
+            for key, value in matching_mac_info.items():
+                client_data[f'Matching MAC Info - {key}'] = value
 
-        # Save data to a CSV file with today's date and time in the filename
+            all_clients_data.append(client_data)
+
+        # Save data to a CSV file with today's date and time in the filename, using comma as the delimiter
         now = datetime.now()
         date_time = now.strftime("%Y-%m-%d_%H-%M-%S")
         csv_filename = f"{networks[network_choice - 1]['name']}_{date_time}_clients_with_mac_info.csv"
         df = pd.DataFrame(all_clients_data).fillna("None")
-        df.to_csv(csv_filename, index=False)
+        df.to_csv(csv_filename, index=False, sep=',')  # Specify comma as the delimiter
         print(f"Data has been saved to {csv_filename}.")
+
+        # Read the CSV file with comma as the delimiter
+        read_df = pd.read_csv(csv_filename, delimiter=',')
+        print("\nData read from the CSV file with proper comma delimiter:")
+        print(read_df)
 
     except requests.exceptions.HTTPError as errh:
         print("Http Error:", errh)
