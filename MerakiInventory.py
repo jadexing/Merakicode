@@ -1,6 +1,3 @@
-#This code will pull your Meraki inventory and place it into an excel spreadsheet. 
-#By Jamie Price and ChatGPT, https://jamiegprice.substack.com/
-
 import requests
 import pandas as pd
 
@@ -85,6 +82,9 @@ def main():
         data.append({"Network Name": network_name, **ap_inventory})
     
     df = pd.DataFrame(data)
+    
+    # Add a row for the total of each column
+    df.loc['Total'] = df.sum(numeric_only=True, axis=0)
     
     # Export the data to an Excel spreadsheet
     output_file = "meraki_ap_inventory.xlsx"
