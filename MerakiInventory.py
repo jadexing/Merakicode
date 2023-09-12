@@ -1,3 +1,6 @@
+#This code will pull your Meraki inventory and place it into an excel spreadsheet. 
+#By Jamie Price and ChatGPT, https://jamiegprice.substack.com/
+
 import requests
 import pandas as pd
 
@@ -5,9 +8,33 @@ import pandas as pd
 def get_api_key():
     return input("Please enter your Meraki API key: ")
 
-# Function to prompt the user for their organization number
-def get_org_number():
-    return input("Please enter your organization number: ")
+# Function to fetch the list of organizations and select one if there's only one
+def get_org_number(api_key):
+    url = "https://api.meraki.com/api/v1/organizations"
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    
+    org_list = response.json()
+    
+    if len(org_list) == 1:
+        print(f"Automatically selecting organization: {org_list[0]['name']}")
+        return org_list[0]['id']
+    
+    print("Organizations:")
+    for i, org in enumerate(org_list):
+        print(f"{i + 1}. {org['name']}")
+    
+    while True:
+        try:
+            org_index = int(input("Please enter the number of the organization you want to use: ")) - 1
+            if 0 <= org_index < len(org_list):
+                return org_list[org_index]['id']
+            else:
+                print("Invalid input. Please enter a valid organization number.")
+        except ValueError:
+            print("Invalid input. Please enter a valid organization number.")
 
 # Function to fetch the list of networks for a specific organization
 def get_networks(api_key, org_id):
@@ -31,15 +58,15 @@ def get_ap_inventory(api_key, network_id):
     ap_types = {}
     
     for device in inventory:
-        if device["model"].startswith("MR"):
-            ap_model = device["model"]
+        ap_model = device["model"]
+        if ap_model.startswith("MR") or ap_model.startswith("CW"):
             ap_types[ap_model] = ap_types.get(ap_model, 0) + 1
     
     return ap_types
 
 def main():
     api_key = get_api_key()
-    org_id = get_org_number()
+    org_id = get_org_number(api_key)
     
     print("Please wait while gathering data...")
     
