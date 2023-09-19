@@ -1,0 +1,103 @@
+#AP asset data dump with device status.
+
+import requests
+import csv
+import pandas as pd
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        return organizations[0]['id']
+    
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    
+    org_choice = int(input("Please enter the number of your organization: "))
+    selected_org_id = organizations[org_choice - 1]['id']
+    return selected_org_id
+
+def get_devices(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/devices', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def get_device_statuses(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/devices/statuses', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_devices(devices, device_statuses):
+    print("Devices:")
+    for device in devices:
+        device_id = device['serial']
+        device_name = device['name']
+        device_model = device['model']
+        
+        # Find the corresponding device status by serial number
+        status = next((d['status'] for d in device_statuses if d.get('serial') == device_id), 'Unknown')
+        
+        print(f"Name: {device_name}, Serial: {device_id}, Model: {device_model}, Status: {status}")
+
+def export_to_spreadsheet(devices, device_statuses):
+    device_data = []
+    for device in devices:
+        device_id = device['serial']
+        device_name = device['name']
+        device_model = device['model']
+        
+        # Find the corresponding device status by serial number
+        status = next((d['status'] for d in device_statuses if d.get('serial') == device_id), 'Unknown')
+        
+        device_data.append({'Name': device_name, 'Serial': device_id, 'Model': device_model, 'Status': status})
+    
+    df = pd.DataFrame(device_data)
+    excel_filename = "meraki_devices.xlsx"
+    df.to_excel(excel_filename, index=False)
+    print(f"Device data written to {excel_filename}")
+
+def main():
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+
+    if organizations:
+        selected_org_id = select_organization(organizations)
+        devices = get_devices(api_key, selected_org_id)
+        device_statuses = get_device_statuses(api_key, selected_org_id)
+
+        if devices:
+            display_devices(devices, device_statuses)
+            export_to_spreadsheet(devices, device_statuses)
+
+if __name__ == "__main__":
+    main()
