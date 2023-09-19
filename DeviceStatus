@@ -1,8 +1,7 @@
-#AP asset data dump with device status.
-
 import requests
 import csv
 import pandas as pd
+from datetime import datetime
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
 
@@ -81,8 +80,13 @@ def export_to_spreadsheet(devices, device_statuses):
         
         device_data.append({'Name': device_name, 'Serial': device_id, 'Model': device_model, 'Status': status})
     
+    # Sort devices by name
+    device_data.sort(key=lambda x: x['Name'])
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    excel_filename = f"meraki_devices_{timestamp}.xlsx"
+    
     df = pd.DataFrame(device_data)
-    excel_filename = "meraki_devices.xlsx"
     df.to_excel(excel_filename, index=False)
     print(f"Device data written to {excel_filename}")
 
