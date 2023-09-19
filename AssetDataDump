@@ -1,0 +1,73 @@
+#General Meraki Live AP and detail data dump to screen and spreadsheet.
+
+
+import requests
+import csv
+import pandas as pd
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        return organizations[0]['id']
+    
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    
+    org_choice = int(input("Please enter the number of your organization: "))
+    selected_org_id = organizations[org_choice - 1]['id']
+    return selected_org_id
+
+def get_devices(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/devices', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_devices(devices):
+    print("Devices:")
+    for device in devices:
+        print(f"Name: {device['name']}, Serial: {device['serial']}, Model: {device['model']}")
+
+def export_to_spreadsheet(devices):
+    df = pd.DataFrame(devices)
+    excel_filename = "meraki_devices.xlsx"
+    df.to_excel(excel_filename, index=False)
+    print(f"Device data written to {excel_filename}")
+
+def main():
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+
+    if organizations:
+        selected_org_id = select_organization(organizations)
+        devices = get_devices(api_key, selected_org_id)
+
+        if devices:
+            display_devices(devices)
+            export_to_spreadsheet(devices)
+
+if __name__ == "__main__":
+    main()
