@@ -1,5 +1,7 @@
 import requests
 import time
+import csv
+from datetime import datetime
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
 
@@ -54,6 +56,24 @@ def get_health_info(api_key, network_id):
     response.raise_for_status()
     return response.json()
 
+def save_to_csv(data):
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    csv_filename = f"network_health_info_{timestamp}.csv"
+    
+    with open(csv_filename, 'w', newline='') as csv_file:
+        fieldnames = ["clientId", "mac", "onboarding", "performance"]
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for entry in data:
+            writer.writerow({
+                "clientId": entry["clientId"],
+                "mac": entry["mac"],
+                "onboarding": entry["onboarding"],
+                "performance": entry["performance"]
+            })
+    
+    print(f"Network health information saved to {csv_filename}")
+
 def main():
     api_key = get_api_key()
     organizations = get_organizations(api_key)
@@ -78,6 +98,10 @@ def main():
                 health_info = get_health_info(api_key, selected_network_id)
                 print("Network Health Information:")
                 print(health_info)
+
+                # Save selected columns from health_info to a timestamped CSV file
+                save_to_csv(health_info)
+
             except requests.exceptions.HTTPError as errh:
                 print("Http Error:", errh)
             except requests.exceptions.ConnectionError as errc:
