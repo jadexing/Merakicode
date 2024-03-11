@@ -1,3 +1,5 @@
+#With your API key placed in this script, it will run without prompting.
+
 import requests
 import openpyxl
 from datetime import datetime
@@ -20,7 +22,7 @@ def get_organizations():
         print(f"Error occurred during API call: {e}")
         return []
 
-def get_all_networks(api_key, org_id):
+def get_networks(api_key, org_id):
     headers = {
         'X-Cisco-Meraki-API-Key': api_key,
     }
@@ -65,15 +67,10 @@ def get_clients_per_ap(api_key, network_id, network_name):
             # Append the current results to the aggregated data
             aggregated_data[network_name].append({'Time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                                   'APs': ap_clients})
-            print(f"\nAPs in Network {network_name} with client count over 30:")
-            for ap_name, client_count in ap_clients.items():
-                if client_count >= 30:
-                    print(f"{ap_name}: {client_count} clients")
         else:
             # If no APs over 30, append 'null' to indicate this in the spreadsheet
             aggregated_data[network_name].append({'Time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                                   'APs': 'null'})
-            print(f"\nNo APs in Network {network_name} with client count over 30.")
 
     except requests.exceptions.RequestException as e:
         print(f"Error occurred during API call: {e}")
@@ -82,23 +79,12 @@ def main():
     global aggregated_data  # Use the global dictionary
 
     organizations = get_organizations()
-    # No need to display organizations when automatically selecting
-    # display_organizations(organizations)
+    selected_org_id = organizations[0]['id']  # Automatically select the first organization
 
-    selected_org_id = select_organization(organizations)
+    networks = get_networks(API_KEY, selected_org_id)
 
-    all_networks = get_all_networks(API_KEY, selected_org_id)
-
-    start_time = datetime.now()
-
-    for network in all_networks:
+    for network in networks:
         get_clients_per_ap(API_KEY, network['id'], network['name'])
-
-    end_time = datetime.now()
-
-    time_taken = end_time - start_time
-
-    print(f"\nScript execution time: {time_taken}")
 
     # Create an Excel file
     wb = openpyxl.Workbook()
@@ -112,8 +98,7 @@ def main():
         for entry in network_data:
             if entry['APs'] != 'null':
                 for ap_name, client_count in entry['APs'].items():
-                    if client_count >= 30:
-                        ws.append([network_name, entry['Time'], ap_name, client_count])
+                    ws.append([network_name, entry['Time'], ap_name, client_count])
             else:
                 ws.append([network_name, entry['Time'], 'null', 'null'])
 
