@@ -1,0 +1,135 @@
+#This code is to display on the screen and dump to an Exel File APs with 30 or more connected. This code goes for specific building/network names- line 96. You need to place your API key and building/network names for this to work.
+
+import requests
+import openpyxl
+from datetime import datetime
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+API_KEY = ''  # Replace 'your_api_key_here' with your actual API key
+
+# Dictionary to store aggregated data
+aggregated_data = {}
+
+def get_organizations():
+    headers = {
+        'X-Cisco-Meraki-API-Key': API_KEY,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def select_organization(organizations):
+    # For automatic selection, return the ID of the organization directly
+    return organizations[0]['id']
+
+def get_networks(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def get_clients_per_ap(api_key, network_id, network_name):
+    global aggregated_data  # Use the global dictionary
+
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'networks/{network_id}/devices', headers=headers)
+        response.raise_for_status()
+        devices_data = response.json()
+        ap_clients = {}  # Dictionary to store AP name and client count
+
+        print(f"\nRetrieving client count per AP for the last 5 minutes in Network {network_name} (ID: {network_id})...")  # Status message
+
+        # Retrieve clients for each AP for the last 5 minutes
+        for device in devices_data:
+            if device["model"].startswith("MR") or device["model"].startswith("CW"):  # Filter APs
+                ap_name = device["name"]
+                ap_url = f"https://api.meraki.com/api/v1/devices/{device['serial']}/clients?timespan=300"
+                ap_response = requests.get(ap_url, headers=headers)
+                if ap_response.status_code == 200:
+                    ap_clients_data = ap_response.json()
+                    ap_clients[ap_name] = len(ap_clients_data)
+
+        # Aggregate data for this network
+        if network_name not in aggregated_data:
+            aggregated_data[network_name] = []
+
+        # Check if there are APs with user count over 30
+        if any(client_count >= 30 for client_count in ap_clients.values()):
+            # Append the current results to the aggregated data
+            aggregated_data[network_name].append({'Time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                  'APs': ap_clients})
+            print(f"\nAPs in Network {network_name} with client count over 30:")
+            for ap_name, client_count in ap_clients.items():
+                if client_count >= 30:
+                    print(f"{ap_name}: {client_count} clients")
+        else:
+            # If no APs over 30, append 'null' to indicate this in the spreadsheet
+            aggregated_data[network_name].append({'Time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                  'APs': 'null'})
+            print(f"\nNo APs in Network {network_name} with client count over 30.")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+
+def main():
+    global aggregated_data  # Use the global dictionary
+
+    organizations = get_organizations()
+    # No need to display organizations when automatically selecting
+    # display_organizations(organizations)
+
+    selected_org_id = select_organization(organizations)
+
+    networks_to_select = ['BLD1', 'BLD2', 'BLD3', 'BLD4']
+
+    start_time = datetime.now()
+
+    for network_name in networks_to_select:
+        selected_network = next((n for n in get_networks(API_KEY, selected_org_id) if n['name'] == network_name), None)
+        if selected_network:
+            get_clients_per_ap(API_KEY, selected_network['id'], network_name)
+
+    end_time = datetime.now()
+
+    time_taken = end_time - start_time
+
+    print(f"\nScript execution time: {time_taken}")
+
+    # Create an Excel file
+    wb = openpyxl.Workbook()
+    ws = wb.active
+
+    # Add headers
+    ws.append(['Network Name', 'Time', 'AP Name', 'Client Count'])
+
+    # Populate the Excel file with aggregated data
+    for network_name, network_data in aggregated_data.items():
+        for entry in network_data:
+            if entry['APs'] != 'null':
+                for ap_name, client_count in entry['APs'].items():
+                    if client_count >= 30:
+                        ws.append([network_name, entry['Time'], ap_name, client_count])
+            else:
+                ws.append([network_name, entry['Time'], 'null', 'null'])
+
+    # Save the Excel file with a unique name based on date and time
+    file_name = f"Meraki_Aggregated_Client_Count_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
+    wb.save(file_name)
+
+    print(f"\nAggregated results saved to {file_name}")
+
+if __name__ == "__main__":
+    main()
