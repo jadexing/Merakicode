@@ -1,4 +1,5 @@
 #User count per AP above 30 clients- per network, per AP with friendly network name.
+#Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
 
 import requests
 
