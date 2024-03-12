@@ -1,5 +1,5 @@
 #Lists Active Clients on a network, the Meraki Client ID and MAC address
-#By Jamie Price- Wi-Fi Cool Cats and ChatGPT
+##Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
 
 import requests
 import pandas as pd
