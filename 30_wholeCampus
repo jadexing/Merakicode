@@ -1,4 +1,6 @@
 #With your API key placed in this script, it will run without prompting.
+#Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/
+
 
 import requests
 import openpyxl
