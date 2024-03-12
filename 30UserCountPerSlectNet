@@ -1,3 +1,5 @@
+#Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/
+
 import requests
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
