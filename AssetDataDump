@@ -1,4 +1,5 @@
 #General Meraki Live AP and detail data dump to screen and spreadsheet.
+###Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
 
 
 import requests
