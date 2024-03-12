@@ -1,3 +1,6 @@
+#APs and serial numbers per network.
+###Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
+
 import requests
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
