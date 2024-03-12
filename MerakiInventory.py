@@ -1,3 +1,5 @@
+#Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
+
 import requests
 import pandas as pd
 
