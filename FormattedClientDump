@@ -1,5 +1,6 @@
 #Please note until I find a way to fix this, this data is missing WirelessCapabilities and OS for clients. Please use the "UerDataDump" to get that data.
 #Created by Jamie Price- Wi-Fi Cool Cats and ChatGPT. 08082023
+#https://jamiegprice.substack.com/ CWNE #510
 
 import requests
 import pandas as pd
