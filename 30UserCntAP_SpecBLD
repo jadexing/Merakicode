@@ -1,4 +1,5 @@
 #This code is to display on the screen and dump to an Exel File APs with 30 or more connected. This code goes for specific building/network names- line 96. You need to place your API key and building/network names for this to work.
+#Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/
 
 import requests
 import openpyxl
