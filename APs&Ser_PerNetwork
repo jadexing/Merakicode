@@ -1,4 +1,4 @@
-#APs and serial numbers per network.
+#APs and serial numbers per network- update gives this data in alpahbetical order.
 ###Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
 
 import requests
@@ -40,7 +40,8 @@ def get_networks(api_key, org_id):
 
 def display_networks(networks):
     print("Networks:")
-    for idx, network in enumerate(networks, 1):
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks, 1):
         print(f"{idx}. {network['name']} (ID: {network['id']})")
     print()
 
@@ -58,7 +59,8 @@ def get_access_points(api_key, network_id):
 
 def display_access_points(aps):
     print("Access Points:")
-    for idx, ap in enumerate(aps, 1):
+    sorted_aps = sorted(aps, key=lambda x: x['name'].lower())
+    for idx, ap in enumerate(sorted_aps, 1):
         print(f"{idx}. {ap['name']} (Serial: {ap['serial']})")
 
 def main():
