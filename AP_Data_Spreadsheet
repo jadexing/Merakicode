@@ -1,8 +1,9 @@
 #General AP datadump into a spreadsheet.
 ##Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
 
+
 import requests
-import csv
+import datetime
 import pandas as pd
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
@@ -10,13 +11,31 @@ BASE_URL = 'https://api.meraki.com/api/v1/'
 def get_api_key():
     return input("Enter your Meraki API key: ")
 
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()  # Raise an exception for unsuccessful API calls
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
 def get_networks(api_key, org_id):
     headers = {
         'X-Cisco-Meraki-API-Key': api_key,
     }
     try:
         response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
-        response.raise_for_status()
+        response.raise_for_status()  # Raise an exception for unsuccessful API calls
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error occurred during API call: {e}")
@@ -28,36 +47,63 @@ def display_networks(networks):
         print(f"{idx}. {network['name']} (ID: {network['id']})")
     print()
 
-def get_access_points(api_key, network_id):
+def get_access_points(api_key, network_ids):
     headers = {
         'X-Cisco-Meraki-API-Key': api_key,
     }
-    try:
-        response = requests.get(BASE_URL + f'networks/{network_id}/devices', headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error occurred during API call: {e}")
-        return []
+    all_access_points = []
+    for network_id in network_ids:
+        try:
+            response = requests.get(BASE_URL + f'networks/{network_id}/devices', headers=headers)
+            response.raise_for_status()  # Raise an exception for unsuccessful API calls
+            all_access_points.extend(response.json())
+        except requests.exceptions.RequestException as e:
+            print(f"Error occurred during API call: {e}")
+    return all_access_points
+
+def display_access_points(aps):
+    print("Access Points:")
+    for idx, ap in enumerate(aps, 1):
+        print(f"{idx}. {ap['name']} (Serial: {ap['serial']})")
 
 def main():
+    start_time = datetime.datetime.now()
     api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    
+    if organizations:
+        display_organizations(organizations)
+        org_choice = int(input("Please enter the number of your organization: "))
+        selected_org_id = organizations[org_choice - 1]['id']
 
-    org_id = input("Enter the ID of your organization: ")
-    networks = get_networks(api_key, org_id)
-
-    if networks:
-        display_networks(networks)
-        network_choice = int(input("Please enter the number of the network you want to retrieve access points for: "))
-        selected_network_id = networks[network_choice - 1]['id']
-
-        access_points = get_access_points(api_key, selected_network_id)
-
-        if access_points:
-            df = pd.DataFrame(access_points)
-            excel_filename = "access_points.xlsx"
-            df.to_excel(excel_filename, index=False)
-            print(f"Access point data for Network ID {selected_network_id} written to {excel_filename}")
+        networks = get_networks(api_key, selected_org_id)
+        
+        if networks:
+            display_networks(networks)
+            network_choice = input("Would you like to retrieve data for a specific network? (y/n): ")
+            if network_choice.lower() == 'y':
+                network_number = int(input("Please enter the number of the network you want to retrieve data for: "))
+                selected_network_id = networks[network_number - 1]['id']
+                access_points = get_access_points(api_key, [selected_network_id])
+            else:
+                network_ids = [network['id'] for network in networks]
+                access_points = get_access_points(api_key, network_ids)
+            
+            if access_points:
+                display_access_points(access_points)
+                
+                # Save data to spreadsheet
+                df = pd.DataFrame(access_points)
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                excel_filename = f"Meraki_Data_{timestamp}.xlsx"
+                df.to_excel(excel_filename, index=False)
+                
+                # Calculate job duration
+                end_time = datetime.datetime.now()
+                duration_minutes = (end_time - start_time).total_seconds() / 60.0
+                
+                print(f"\nData saved to {excel_filename}")
+                print(f"Job completed in {duration_minutes:.2f} minutes.")
 
 if __name__ == "__main__":
     main()
