@@ -42,10 +42,10 @@ def get_networks(api_key, org_id):
 
 def display_networks(networks):
     print("Networks:")
-    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
-    for idx, network in enumerate(sorted_networks, 1):
+    for idx, network in enumerate(networks, 1):
         print(f"{idx}. {network['name']} (ID: {network['id']})")
     print()
+    return networks
 
 def get_access_points(api_key, network_id):
     headers = {
@@ -78,7 +78,7 @@ def main():
         networks = get_networks(api_key, selected_org_id)
         
         if networks:
-            display_networks(networks)
+            networks = display_networks(networks)
             network_choice = int(input("Please enter the number of your network: "))
             selected_network_id = networks[network_choice - 1]['id']
 
