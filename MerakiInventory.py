@@ -2,6 +2,7 @@
 
 import requests
 import pandas as pd
+import datetime
 
 # Function to prompt the user for their Meraki API key
 def get_api_key():
@@ -64,6 +65,8 @@ def get_ap_inventory(api_key, network_id):
     return ap_types
 
 def main():
+    start_time = datetime.datetime.now()
+    
     api_key = get_api_key()
     org_id = get_org_number(api_key)
     
@@ -80,7 +83,7 @@ def main():
         network_name = network["name"]
         network_id = network["id"]
         ap_inventory = get_ap_inventory(api_key, network_id)
-        
+        ap_inventory["Total"] = sum(ap_inventory.values())  # Add total for each row
         data.append({"Network Name": network_name, **ap_inventory})
     
     df = pd.DataFrame(data)
@@ -88,11 +91,23 @@ def main():
     # Add a row for the total of each column
     df.loc['Total'] = df.sum(numeric_only=True, axis=0)
     
+    # Rename the "MR" column to "Total"
+    df = df.rename(columns={"MR": "Total"})
+    
+    # Move the "Total" column to the right end of the DataFrame
+    columns = list(df.columns)
+    columns.remove("Total")
+    df = df[columns + ["Total"]]
+    
     # Export the data to an Excel spreadsheet
-    output_file = "meraki_ap_inventory.xlsx"
+    output_file = f"meraki_ap_inventory_{start_time.strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     df.to_excel(output_file, index=False, engine='openpyxl')
     
+    end_time = datetime.datetime.now()
+    duration_minutes = (end_time - start_time).total_seconds() / 60.0
+    
     print(f"Data has been collected and saved to '{output_file}'.")
+    print(f"Job completed in {duration_minutes:.2f} minutes.")
 
 if __name__ == "__main__":
     main()
