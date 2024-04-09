@@ -44,7 +44,7 @@ def get_networks(api_key, org_id):
     response = requests.get(url, headers=headers)
     response.raise_for_status()
     
-    return response.json()
+    return sorted(response.json(), key=lambda x: x["name"])  # Sort networks by name
 
 # Function to get the inventory count of Access Points for a network
 def get_ap_inventory(api_key, network_id):
