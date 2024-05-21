@@ -80,6 +80,7 @@ def get_clients_per_ap(api_key, network):
         for ap_name, client_count in ap_clients.items():
             print(f"{ap_name} in {network['name']} (ID: {network['id']}): {client_count} clients")
 
+        print(f"Total number of clients in {network['name']} (ID: {network['id']}): {total_clients}")
         return total_clients
 
     except requests.exceptions.RequestException as e:
