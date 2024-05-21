@@ -1,6 +1,7 @@
-#Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
+#Wi-Fi cool cats. CWNE #510, Blog  https://jamiegprice.substack.com/
 
 import requests
+import datetime
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
 
@@ -13,7 +14,7 @@ def get_organizations(api_key):
     }
     try:
         response = requests.get(BASE_URL + 'organizations', headers=headers)
-        response.raise_for_status()  # Raise an exception for unsuccessful API calls
+        response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error occurred during API call: {e}")
@@ -25,13 +26,21 @@ def display_organizations(organizations):
         print(f"{idx}. {org['name']} (ID: {org['id']})")
     print()
 
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+        return organizations[0]['id']
+    else:
+        org_idx = int(input("Enter the number of the organization: "))
+        return organizations[org_idx - 1]['id']
+
 def get_networks(api_key, org_id):
     headers = {
         'X-Cisco-Meraki-API-Key': api_key,
     }
     try:
         response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
-        response.raise_for_status()  # Raise an exception for unsuccessful API calls
+        response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error occurred during API call: {e}")
@@ -39,25 +48,97 @@ def get_networks(api_key, org_id):
 
 def display_networks(networks):
     print("Networks:")
-    for idx, network in enumerate(networks, 1):
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks, 1):
         print(f"{idx}. {network['name']} (ID: {network['id']})")
+    print()
+    return sorted_networks
+
+def get_clients_per_ap(api_key, network):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'networks/{network["id"]}/devices', headers=headers)
+        response.raise_for_status()
+        devices_data = response.json()
+        ap_clients = {}  # Dictionary to store AP name and client count
+        total_clients = 0
+
+        print(f"\nRetrieving client count per AP for the last 5 minutes in {network['name']} (ID: {network['id']})...")  # Status message
+
+        # Retrieve clients for each AP for the last 5 minutes
+        for device in devices_data:
+            if device["model"].startswith("MR") or device["model"].startswith("CW"):  # Filter APs
+                ap_name = device["name"]
+                ap_url = f"https://api.meraki.com/api/v1/devices/{device['serial']}/clients?timespan=300"
+                ap_response = requests.get(ap_url, headers=headers)
+                if ap_response.status_code == 200:
+                    ap_clients_data = ap_response.json()
+                    client_count = len(ap_clients_data)
+                    ap_clients[ap_name] = client_count
+                    total_clients += client_count
+
+        # Display results for all APs
+        for ap_name, client_count in ap_clients.items():
+            print(f"{ap_name} in {network['name']} (ID: {network['id']}): {client_count} clients")
+
+        print(f"Total number of clients in {network['name']} (ID: {network['id']}): {total_clients}")
+        return total_clients
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return 0
 
 def main():
+    start_time = datetime.datetime.now()
+
     api_key = get_api_key()
     organizations = get_organizations(api_key)
-    
-    if organizations:
-        if len(organizations) == 1:
-            print(f"Only one organization available: {organizations[0]['name']} (ID: {organizations[0]['id']})")
-            selected_org_id = organizations[0]['id']
-        else:
-            display_organizations(organizations)
-            org_choice = int(input("Please enter the number of your organization: "))
-            selected_org_id = organizations[org_choice - 1]['id']
+    if not organizations:
+        return
+    display_organizations(organizations)
 
-        networks = get_networks(api_key, selected_org_id)
-        if networks:
-            display_networks(networks)
+    selected_org_id = select_organization(organizations)
+
+    networks = get_networks(api_key, selected_org_id)
+    if not networks:
+        return
+    sorted_networks = display_networks(networks)
+
+    total_clients_all_networks = 0
+    network_summary = []
+
+    # Ask user if they want data for all networks or specific networks
+    user_choice = input("Do you want data for all networks (Enter 'all') or specific networks (Enter 'specific')? ").lower()
+
+    if user_choice == 'specific':
+        selected_networks_indices = input("Enter the index numbers of the networks you want (separated by comma): ").split(',')
+        selected_networks = [sorted_networks[int(idx) - 1] for idx in selected_networks_indices]
+        for network in selected_networks:
+            total_clients = get_clients_per_ap(api_key, network)
+            total_clients_all_networks += total_clients
+            network_summary.append((network['name'], total_clients))
+    elif user_choice == 'all':
+        for network in sorted_networks:
+            total_clients = get_clients_per_ap(api_key, network)
+            total_clients_all_networks += total_clients
+            network_summary.append((network['name'], total_clients))
+    else:
+        print("Invalid choice. Exiting.")
+        return
+
+    end_time = datetime.datetime.now()
+    duration = end_time - start_time
+    duration_minutes = duration.total_seconds() / 60
+
+    # Display summary
+    print("\nSummary of all networks and their client totals:")
+    for network_name, client_count in network_summary:
+        print(f"{network_name}: {client_count} clients")
+
+    print(f"\nTotal number of clients across all selected networks: {total_clients_all_networks}")
+    print(f"Job completed in {duration_minutes:.2f} minutes.")
 
 if __name__ == "__main__":
     main()
