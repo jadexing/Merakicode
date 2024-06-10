@@ -1,3 +1,5 @@
+#Code example from free Coursera class, "Python for Everybody." This code example will help with parsing a Meraki data dump file.
+
 name = input("Enter file:")
 if len(name) < 1:
     name = "mbox-short.txt"
