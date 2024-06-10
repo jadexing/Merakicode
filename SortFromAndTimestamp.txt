@@ -1,0 +1,26 @@
+name = input("Enter file:")
+if len(name) < 1:
+    name = "mbox-short.txt"
+handle = open(name)
+
+counts = dict()
+
+for line in handle:
+    if line.startswith("From "):
+        words = line.split()
+        if len(words) > 5:
+            time_part = words[5]
+            time_parts = time_part.split(':')
+            if len(time_parts) == 3:
+                hour, minute, second = time_parts
+                if hour.isdigit() and minute.isdigit() and second.isdigit():
+                    hour = int(hour)
+                    minute = int(minute)
+                    second = int(second)
+                    if 1 <= hour <= 24 and 0 <= minute <= 59 and 0 <= second <= 59:
+                        counts[str(hour).zfill(2)] = counts.get(str(hour).zfill(2), 0) + 1
+
+                       
+
+for key, val in sorted(counts.items()):
+    print(key, val)
