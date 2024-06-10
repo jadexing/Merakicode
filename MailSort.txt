@@ -1,3 +1,5 @@
+#code to help parse a file. Code example from free Coursera class, "Python for Everybody."
+
 name = input("Enter file:")
 if len(name) < 1:
     name = "mbox-short.txt"
