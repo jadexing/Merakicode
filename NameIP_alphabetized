@@ -1,0 +1,83 @@
+#Code lists AP name and IP address.
+# @jamiegprice https://jamiegprice.substack.com/
+
+import requests
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()  # Raise an exception for unsuccessful API calls
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def get_devices_status(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/devices/statuses', headers=headers)
+        response.raise_for_status()  # Raise an exception for unsuccessful API calls
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_and_save_device_statuses(devices):
+    # Filter devices to include only those with both a name and a LAN IP
+    filtered_devices = [device for device in devices if device.get('name') and device.get('lanIp')]
+    
+    if not filtered_devices:
+        print("No devices with both name and LAN IP found.")
+        return
+
+    sorted_devices = sorted(filtered_devices, key=lambda x: x.get('name', ''))
+
+    # Open a file to write
+    with open('device&IP.txt', 'w') as file:
+        file.write("If no IP address, or IP address only- data was omitted.\n\n")
+        file.write("Device Statuses:\n")
+        for device in sorted_devices:
+            # Print device information to terminal
+            if 'name' in device:
+                print(device['name'])
+                file.write(f"{device['name']}\n")
+            if 'lanIp' in device:
+                print(device['lanIp'])
+                file.write(f"{device['lanIp']}\n")
+            file.write("\n")
+
+    print("\nDevice statuses have been written to device&IP.txt")
+
+def main():
+    api_key = get_api_key()
+    
+    # Fetch organizations and select the first one
+    organizations = get_organizations(api_key)
+    if not organizations:
+        print("No organizations found or an error occurred.")
+        return
+    
+    # Automatically select the first organization
+    selected_org_id = organizations[0]['id']
+    print(f"Selected Organization ID: {selected_org_id}")
+
+    # Fetch device statuses for the selected organization
+    devices = get_devices_status(api_key, selected_org_id)
+    
+    if devices:
+        display_and_save_device_statuses(devices)
+    else:
+        print("No device data found or an error occurred.")
+
+if __name__ == "__main__":
+    main()
