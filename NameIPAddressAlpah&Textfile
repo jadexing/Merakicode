@@ -1,0 +1,96 @@
+#This code creates terminal output and a text file of an AP name and an IP address.
+#This data is perfect for uploading Meraki APs to SolarWinds. The SW discovery AP call does not pull above so many devices.
+# @jamiegprice https://jamiegprice.substack.com/
+
+import requests
+import datetime
+import os
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organization_id(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        organizations = response.json()
+        if len(organizations) == 1:
+            return organizations[0]['id']
+        else:
+            print("Multiple organizations found. Please enter the organization ID:")
+            for idx, org in enumerate(organizations, 1):
+                print(f"{idx}. {org['name']} (ID: {org['id']})")
+            org_choice = int(input("Please enter the number of your organization: "))
+            return organizations[org_choice - 1]['id']
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return None
+
+def get_device_statuses(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/devices/statuses', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def save_to_file(data, filename):
+    with open(filename, 'w') as file:
+        file.write("If no IP address, or IP address only- data was omitted.\n")
+        for device in data:
+            file.write(f"{device['name']}\n{device['lanIp']}\n\n")
+
+def main():
+    start_time = datetime.datetime.now()
+
+    api_key = get_api_key()
+    if not api_key:
+        return
+
+    org_id = get_organization_id(api_key)
+    if not org_id:
+        return
+
+    devices = get_device_statuses(api_key, org_id)
+    if not devices:
+        return
+
+    filtered_devices = [device for device in devices if device.get('lanIp') and device.get('name')]
+
+    # Print to terminal
+    if filtered_devices:
+        print("If no IP address, or IP address only- data was omitted.")
+        for device in filtered_devices:
+            print(device['name'])
+            print(device['lanIp'])
+            print()
+
+    # Sort devices alphabetically by name
+    filtered_devices.sort(key=lambda x: x['name'].lower())
+
+    # Prepare filename with timestamp
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"device_IP_{timestamp}.txt"
+
+    # Save to file
+    save_to_file(filtered_devices, filename)
+
+    end_time = datetime.datetime.now()
+    duration = end_time - start_time
+    duration_minutes = duration.seconds // 60
+    duration_seconds = duration.seconds % 60
+
+    print(f"Data has been written to {filename}")
+    print(f"Job completed in {duration_minutes} minutes and {duration_seconds} seconds.")
+
+if __name__ == "__main__":
+    main()
