@@ -1,0 +1,261 @@
+#Listnetworks and their SSIDs starter code.
+# Twitter @jamiegprice
+
+import requests
+import datetime
+import openpyxl
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    api_key = input("Enter your Meraki API key (or 'q' to quit): ").strip()
+    if api_key.lower() == 'q':
+        quit_program()
+    return api_key
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+        return organizations[0]['id']
+    else:
+        org_idx = input("Enter the number of the organization (or 'q' to quit): ").strip()
+        if org_idx.lower() == 'q':
+            quit_program()
+        return organizations[int(org_idx) - 1]['id']
+
+def get_networks(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_networks(networks):
+    print("Networks:")
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks, 1):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+    print()
+    return sorted_networks
+
+def select_network_by_name(networks):
+    network_name = input("Enter the name of the network you want to modify (or 'q' to quit): ").strip()
+    if network_name.lower() == 'q':
+        quit_program()
+
+    selected_network = next((network for network in networks if network['name'].lower() == network_name.lower()), None)
+    if selected_network:
+        return selected_network
+    else:
+        print("Invalid network name selected.")
+        return None
+
+def get_network_ssids(api_key, network_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'networks/{network_id}/wireless/ssids', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_ssids(ssids):
+    for ssid in ssids:
+        print(f"SSID Number: {ssid['number']}, SSID Name: {ssid['name']}")
+    print()
+
+def display_and_save_ssids(networks, api_key, show_only_enabled, show_only_radius):
+    # Create a new Excel workbook and sheet
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "SSID Configurations"
+    
+    # Add headers to the sheet
+    sheet.append(["Network Index", "Network Name", "Network ID", "SSID Number", "SSID Name", "SSID Enabled", "Authentication Mode", "RADIUS Server IP/FQDN"])
+
+    for network_index, network in enumerate(networks, 1):
+        ssids = get_network_ssids(api_key, network['id'])
+        print(f"{network_index}. SSIDs for network '{network['name']}' (ID: {network['id']}):")
+        
+        for ssid in ssids:
+            # Check if SSID should be included based on enabled status and RADIUS server presence
+            if (not show_only_enabled or ssid['enabled']) and (not show_only_radius or (ssid['authMode'] == '8021x-radius' and 'radiusServers' in ssid)):
+                radius_ips = []
+                
+                if ssid['authMode'] == '8021x-radius' and 'radiusServers' in ssid:
+                    for server in ssid['radiusServers']:
+                        radius_ips.append(server['host'])
+                
+                radius_ips_str = ", ".join(radius_ips)
+                
+                print(f" - SSID Number: {ssid['number']}")
+                print(f"   SSID Name: {ssid['name']}")
+                print(f"   Enabled: {ssid['enabled']}")
+                print(f"   Auth Mode: {ssid['authMode']}")
+                print(f"   RADIUS Servers: {radius_ips_str}")
+                print()
+
+                # Save the details to the spreadsheet
+                sheet.append([
+                    network_index,
+                    network['name'],
+                    network['id'],
+                    ssid['number'],
+                    ssid['name'],
+                    ssid['enabled'],
+                    ssid['authMode'],
+                    radius_ips_str
+                ])
+
+    # Save the workbook to a file
+    workbook.save("meraki_ssid_configurations.xlsx")
+    print("SSID configurations have been saved to 'meraki_ssid_configurations.xlsx'.")
+
+def modify_radius_server(api_key, network):
+    ssids = get_network_ssids(api_key, network['id'])
+    display_ssids(ssids)
+    
+    ssid_number = input("Enter the SSID number you want to modify (or 'q' to quit): ").strip()
+    if ssid_number.lower() == 'q':
+        quit_program()
+        
+    selected_ssid = next((ssid for ssid in ssids if ssid['number'] == int(ssid_number)), None)
+    
+    if selected_ssid:
+        print(f"Modifying RADIUS servers for SSID '{selected_ssid['name']}' in network '{network['name']}'")
+
+        action = input("Would you like to add, remove, or change a RADIUS server IP? (add/remove/change, or 'q' to quit): ").strip().lower()
+        if action == 'q':
+            quit_program()
+
+        if action == 'add':
+            new_ip = input("Enter the IP or FQDN of the new RADIUS server (or 'q' to quit): ").strip()
+            if new_ip.lower() == 'q':
+                quit_program()
+            if 'radiusServers' not in selected_ssid:
+                selected_ssid['radiusServers'] = []
+            selected_ssid['radiusServers'].append({"host": new_ip})
+
+        elif action == 'remove':
+            remove_ip = input("Enter the IP or FQDN of the RADIUS server to remove (or 'q' to quit): ").strip()
+            if remove_ip.lower() == 'q':
+                quit_program()
+            selected_ssid['radiusServers'] = [server for server in selected_ssid['radiusServers'] if server['host'] != remove_ip]
+
+        elif action == 'change':
+            old_ip = input("Enter the IP or FQDN of the RADIUS server to change (or 'q' to quit): ").strip()
+            if old_ip.lower() == 'q':
+                quit_program()
+            new_ip = input(f"Enter the new IP or FQDN to replace {old_ip} (or 'q' to quit): ").strip()
+            if new_ip.lower() == 'q':
+                quit_program()
+            for server in selected_ssid['radiusServers']:
+                if server['host'] == old_ip:
+                    server['host'] = new_ip
+
+        else:
+            print("Invalid action. Skipping modification.")
+            return
+
+        # Update the SSID with the modified RADIUS server configuration
+        headers = {
+            'X-Cisco-Meraki-API-Key': api_key,
+            'Content-Type': 'application/json'
+        }
+        payload = {
+            "name": selected_ssid["name"],  # Include other required fields as per API expectations
+            "enabled": selected_ssid["enabled"],
+            "authMode": selected_ssid["authMode"],
+            "radiusServers": selected_ssid["radiusServers"]
+        }
+        
+        print(f"Payload being sent: {payload}")  # Debugging line to see the exact payload
+        
+        try:
+            response = requests.put(BASE_URL + f'networks/{network["id"]}/wireless/ssids/{selected_ssid["number"]}', headers=headers, json=payload)
+            response.raise_for_status()
+            print("RADIUS server configuration updated successfully.")
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to update RADIUS server configuration: {e}")
+    else:
+        print("Invalid SSID number selected.")
+
+def quit_program():
+    print("Great! Have a good day.")
+    exit()
+
+def main():
+    while True:
+        start_time = datetime.datetime.now()
+
+        api_key = get_api_key()
+        organizations = get_organizations(api_key)
+        if not organizations:
+            return
+        display_organizations(organizations)
+
+        selected_org_id = select_organization(organizations)
+
+        networks = get_networks(api_key, selected_org_id)
+        if not networks:
+            return
+        sorted_networks = display_networks(networks)
+
+        # Ask the user if they want to view only enabled SSIDs
+        show_only_enabled = input("Do you want to view only enabled SSIDs? (yes/no, or 'q' to quit): ").strip().lower()
+        if show_only_enabled == 'q':
+            quit_program()
+        show_only_enabled = show_only_enabled == "yes"
+        
+        # Ask the user if they want to view only SSIDs with RADIUS servers
+        show_only_radius = input("Do you want to view only SSIDs with RADIUS servers? (yes/no, or 'q' to quit): ").strip().lower()
+        if show_only_radius == 'q':
+            quit_program()
+        show_only_radius = show_only_radius == "yes"
+
+        # Display and save SSID configurations
+        display_and_save_ssids(sorted_networks, api_key, show_only_enabled, show_only_radius)
+
+        # Ask the user if they want to modify a RADIUS server
+        modify_radius = input("Do you want to modify a RADIUS server for any network? (yes/no, or 'q' to quit): ").strip().lower()
+        if modify_radius == 'q':
+            quit_program()
+        
+        if modify_radius == "yes":
+            selected_network = select_network_by_name(sorted_networks)
+            if selected_network:
+                modify_radius_server(api_key, selected_network)
+
+        # Ask if the user wants to perform another action
+        next_action = input("Would you like to add, remove, or quit? (add/remove/quit): ").strip().lower()
+        if next_action == 'q' or next_action == "quit":
+            quit_program()
+
+if __name__ == "__main__":
+    main()
