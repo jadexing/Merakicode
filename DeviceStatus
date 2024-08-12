@@ -1,4 +1,5 @@
 #Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
+#This code runs this API /networks/{networkId}/devices/{serial}/wireless/status
 
 import requests
 import csv
