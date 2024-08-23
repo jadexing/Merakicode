@@ -1,5 +1,5 @@
 #Channel Utilization- API networks/{network_id}/networkHealth/channelUtilization
-#This code brings up your networks, lets you select the network, and displays utilization statistics for that network, per AP.
+#This code brings up your networks, lets you select the network, and displays utilization statistics for that network, per AP- into a spreadsheet.
 #https://jamiegprice.substack.com/ Twitter @jamiegprice
 
 import requests
