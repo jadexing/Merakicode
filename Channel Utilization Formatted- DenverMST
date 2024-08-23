@@ -1,5 +1,6 @@
 #This file formats nicely Channel Utilization in an Excel Spreadsheet to see AP data nicely. It's in Denver MST time.
 #https://jamiegprice.substack.com/ @jamiegprice CWNE #510
+#Note, this script works with low numbers of APs (tested 2- works). Does not appear to work with 13. WIP.
 
 import requests
 import datetime
