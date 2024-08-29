@@ -1,3 +1,7 @@
+#This file formats Channel Utilization- API networks/{network_id}/networkHealth/channelUtilization in an Excel Spreadsheet to see AP data nicely.
+#Per network, per requested AP MST timezone.
+#https://jamiegprice.substack.com/ @jamiegprice CWNE #510
+
 import requests
 from datetime import datetime, timedelta
 import pandas as pd
