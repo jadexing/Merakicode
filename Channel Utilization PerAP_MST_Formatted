@@ -1,4 +1,6 @@
 #Script pulls data per requested AP. It puts in in MST time, and nicely formats the data.
+#Channel Utilization- API networks/{network_id}/networkHealth/channelUtilization
+#https://jamiegprice.substack.com/about #CWNE 510
 
 import requests
 import datetime
