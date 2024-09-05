@@ -42,10 +42,12 @@ def get_networks(api_key, org_id):
 
 def display_networks(networks):
     print("Networks:")
-    for idx, network in enumerate(networks, 1):
+    # Sort networks alphabetically by their names
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks, 1):
         print(f"{idx}. {network['name']} (ID: {network['id']})")
     print()
-    return networks
+    return sorted_networks
 
 def get_access_points(api_key, network_id):
     headers = {
@@ -61,6 +63,7 @@ def get_access_points(api_key, network_id):
 
 def display_access_points(aps):
     print("Access Points:")
+    # Sort Access Points alphabetically by their names
     sorted_aps = sorted(aps, key=lambda x: x['name'].lower())
     for idx, ap in enumerate(sorted_aps, 1):
         print(f"{idx}. {ap['name']} (Serial: {ap['serial']})")
