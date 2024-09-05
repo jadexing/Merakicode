@@ -1,5 +1,5 @@
 #This file formats Channel Utilization- API networks/{network_id}/networkHealth/channelUtilization in an Excel Spreadsheet to see AP data nicely.
-#Per network, per requested AP- for the last two hours.
+#Per network, per requested AP- for the last two hours in MST.
 #https://jamiegprice.substack.com/ @jamiegprice CWNE #510
 
 import requests
