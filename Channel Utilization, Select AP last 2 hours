@@ -1,0 +1,219 @@
+#This file formats Channel Utilization- API networks/{network_id}/networkHealth/channelUtilization in an Excel Spreadsheet to see AP data nicely.
+#Per network, per requested AP- for the last two hours.
+#https://jamiegprice.substack.com/ @jamiegprice CWNE #510
+
+import requests
+import datetime
+import pandas as pd
+import time
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+        return organizations[0]['id']
+    else:
+        while True:
+            try:
+                org_idx = int(input("Enter the number of the organization: ")) - 1
+                if 0 <= org_idx < len(organizations):
+                    return organizations[org_idx]['id']
+                else:
+                    print("Invalid choice, please try again.")
+            except ValueError:
+                print("Invalid input, please enter a number.")
+
+def get_networks(api_key, org_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        networks = response.json()
+        networks.sort(key=lambda x: x['name'])  # Sort networks alphabetically
+        return networks
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_networks(networks):
+    print("Networks:")
+    for idx, network in enumerate(networks, 1):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+    print()
+
+def select_network(networks):
+    while True:
+        choice = input("Enter the number of the network to select (or 'q' to quit): ")
+        if choice.lower() == 'q':
+            return None
+        try:
+            net_idx = int(choice) - 1
+            if 0 <= net_idx < len(networks):
+                return networks[net_idx]['id']
+            else:
+                print("Invalid choice, please try again.")
+        except ValueError:
+            print("Invalid input, please enter a number.")
+
+def get_access_points(api_key, network_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    all_access_points = []
+    url = BASE_URL + f'networks/{network_id}/devices'
+    
+    while url:
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            access_points = response.json()
+            
+            if isinstance(access_points, list):
+                print(f"Fetched {len(access_points)} access points from {url}")
+                all_access_points.extend(access_points)
+                break
+            else:
+                print(f"Unexpected response format: {access_points}")
+                break
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error occurred during API call: {e}")
+            break
+    
+    return all_access_points
+
+def display_access_points(access_points):
+    access_points.sort(key=lambda ap: ap.get('name', 'Unknown AP'))
+    
+    print("Access Points:")
+    for idx, ap in enumerate(access_points, 1):
+        ap_name = ap.get('name', 'Unknown AP')
+        print(f"{idx}. {ap_name} (Serial: {ap['serial']})")
+    print()
+
+def select_access_points(access_points):
+    while True:
+        try:
+            selected_indices = input("Enter the numbers of the APs to select (comma-separated): ")
+            indices = [int(idx.strip()) - 1 for idx in selected_indices.split(',')]
+            if all(0 <= idx < len(access_points) for idx in indices):
+                return [access_points[idx] for idx in indices]
+            else:
+                print("Invalid choice, please try again.")
+        except ValueError:
+            print("Invalid input, please enter valid numbers separated by commas.")
+
+def get_channel_utilization(api_key, network_id, ap_serial, ap_name):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    url = BASE_URL + f'networks/{network_id}/networkHealth/channelUtilization'
+
+    t1 = datetime.datetime.utcnow()
+    t0 = t1 - datetime.timedelta(hours=2)
+    
+    params = {
+        'serial': ap_serial,
+        't0': t0.isoformat() + 'Z',
+        't1': t1.isoformat() + 'Z',
+    }
+
+    print(f"Alert: Pulling the last two hours of channel utilization data for AP {ap_name}...")
+
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        if isinstance(data, list) and data:
+            first_entry = data[0]
+            first_entry['AP Name'] = ap_name
+            first_entry['AP Serial'] = ap_serial
+            return [first_entry]  # Return only the first entry
+        else:
+            print(f"No data or unexpected response format for AP {ap_serial}.")
+            return []
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call for AP {ap_serial}: {e}")
+        return []
+
+def save_to_excel(data, filename):
+    df = pd.DataFrame(data)
+    
+    df = df.loc[:, ~df.columns.duplicated()]
+    
+    df = df[['AP Name', 'AP Serial'] + [col for col in df.columns if col not in ['AP Name', 'AP Serial']]]  
+    
+    df.drop(df.columns[2:4], axis=1, inplace=True)  # Drop unwanted columns (Column C and D)
+
+    df.to_excel(filename, index=False)
+    print(f"Data saved to {filename}")
+
+def main():
+    start_time = datetime.datetime.now()
+
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    if not organizations:
+        return
+    display_organizations(organizations)
+
+    selected_org_id = select_organization(organizations)
+
+    networks = get_networks(api_key, selected_org_id)
+    if not networks:
+        return
+    display_networks(networks)
+
+    selected_network_id = select_network(networks)
+    if not selected_network_id:
+        print("No network selected, exiting.")
+        return
+
+    access_points = get_access_points(api_key, selected_network_id)
+    if not access_points:
+        print("No access points found, exiting.")
+        return
+    
+    display_access_points(access_points)
+    selected_access_points = select_access_points(access_points)
+
+    channel_utilization_data = []
+    for ap in selected_access_points:
+        ap_serial = ap['serial']
+        ap_name = ap.get('name', 'Unknown AP')
+        utilization_data = get_channel_utilization(api_key, selected_network_id, ap_serial, ap_name)
+        
+        channel_utilization_data.extend(utilization_data)
+        time.sleep(1)
+
+    if not channel_utilization_data:
+        print("No channel utilization data retrieved.")
+        return
+
+    end_time = datetime.datetime.now()
+    timestamp = end_time.strftime("%Y%m%d_%H%M%S")
+    filename = f"channel_utilization_{timestamp}.xlsx"
+    save_to_excel(channel_utilization_data, filename)
+
+    duration_minutes = (end_time - start_time).total_seconds() / 60
+    print(f"Job completed in {duration_minutes:.2f} minutes.")
+
+main()
