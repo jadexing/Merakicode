@@ -1,4 +1,4 @@
-#File improved by listing results in alpahbetical order and time displayed on how long it took to run the job.
+#This is starter code listing networks in alpahbetical order and time displayed on how long it took to run the job.
 # https://jamiegprice.substack.com/
 
 import requests
