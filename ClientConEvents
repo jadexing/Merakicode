@@ -1,0 +1,262 @@
+#Get Network Wireless Client Connectivity Events
+#API /networks/{networkId}/wireless/clients/{clientId}/connectivityEvents
+#  @jamiegprice https://jamiegprice.substack.com/
+
+import requests
+import pandas as pd
+from datetime import datetime, timedelta
+import pytz
+import time  # Import time module for sleep function
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    max_retries = 3  # Maximum number of retries
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(BASE_URL + 'organizations', headers=headers)
+            response.raise_for_status()
+            return sorted(response.json(), key=lambda x: x['name'])  # Sort organizations alphabetically
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 401:
+                print("401 Client Error: Unauthorized. Retrying in 3 seconds...")
+                time.sleep(3)  # Wait for 3 seconds before retrying
+            else:
+                print(f"Error occurred during API call: {e}")
+                return []
+        except requests.exceptions.RequestException as e:
+            print(f"Error occurred during API call: {e}")
+            return []
+    print("Maximum retries exceeded. Unable to fetch organizations.")
+    return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+def get_networks(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    max_retries = 3  # Maximum number of retries
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+            response.raise_for_status()
+            return sorted(response.json(), key=lambda x: x['name'])  # Sort networks alphabetically
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 401:
+                print("401 Client Error: Unauthorized. Retrying in 3 seconds...")
+                time.sleep(3)  # Wait for 3 seconds before retrying
+            else:
+                print(f"Error occurred during API call: {e}")
+                return []
+        except requests.exceptions.RequestException as e:
+            print(f"Error occurred during API call: {e}")
+            return []
+    print("Maximum retries exceeded. Unable to fetch networks.")
+    return []
+
+def get_clients(api_key, network_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    all_clients = []
+    per_page = 1000  # Maximum perPage value for the Meraki API
+    starting_after = None
+
+    while True:
+        params = {
+            'perPage': per_page,
+            'startingAfter': starting_after,
+        }
+        max_retries = 3  # Maximum number of retries
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(BASE_URL + f'networks/{network_id}/clients', headers=headers, params=params)
+                response.raise_for_status()
+                clients = response.json()
+                if not clients:
+                    break
+
+                all_clients.extend(clients)
+                starting_after = clients[-1]['id']  # Set the next starting point
+                if len(clients) < per_page:
+                    break
+                break  # Break the retry loop if the request is successful
+            except requests.exceptions.HTTPError as e:
+                if response.status_code == 401:
+                    print("401 Client Error: Unauthorized. Retrying in 3 seconds...")
+                    time.sleep(3)  # Wait for 3 seconds before retrying
+                else:
+                    print(f"Error occurred during API call: {e}")
+                    return []
+            except requests.exceptions.RequestException as e:
+                print(f"Error occurred during API call: {e}")
+                return []
+        else:
+            print("Maximum retries exceeded. Unable to fetch clients.")
+            return []
+
+    return all_clients
+
+def convert_to_mst(timestamp):
+    # Convert the ISO timestamp to UTC
+    utc_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    # Define MST timezone, accounting for Daylight Savings
+    mst_tz = pytz.timezone('America/Denver')
+    # Localize the UTC time to MST/MDT
+    localized_time = utc_time.astimezone(mst_tz)
+    # Return in string format
+    return localized_time.strftime('%Y-%m-%d %H:%M:%S %Z')
+
+def get_connectivity_events(api_key, network_id, client_id, params):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    max_retries = 3  # Maximum number of retries
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(BASE_URL + f'networks/{network_id}/wireless/clients/{client_id}/connectivityEvents', headers=headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 401:
+                print("401 Client Error: Unauthorized. Retrying in 3 seconds...")
+                time.sleep(3)  # Wait for 3 seconds before retrying
+            else:
+                print(f"Error occurred during API call: {e}")
+                return []
+        except requests.exceptions.RequestException as e:
+            print(f"Error occurred during API call: {e}")
+            return []
+    print("Maximum retries exceeded. Unable to fetch connectivity events.")
+    return []
+
+def display_connectivity_events(connectivity_events, network_id, client_id, start_time, end_time):
+    if not connectivity_events:
+        print("No connectivity events found.")
+        return
+
+    print(f"\nNetwork ID: {network_id}")
+    print(f"Client ID: {client_id}")
+
+    # Print start and end times in MST
+    start_time_mst = convert_to_mst(start_time)
+    end_time_mst = convert_to_mst(end_time)
+    print(f"Data Collection Start Time (MST): {start_time_mst}")
+    print(f"Data Collection Stop Time (MST): {end_time_mst}")
+
+    # Print current time, start, and end times
+    current_time = datetime.now(pytz.timezone('America/Denver')).strftime('%Y-%m-%d %H:%M:%S %Z')
+    utc_time = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')  # Current UTC time
+    print(f"This is the current time: {current_time}")
+    print(f"This is the equivalent UTC time: {utc_time}")  # Displaying the UTC time
+
+    event_data = []
+    print("Connectivity Events:")
+    for event in connectivity_events:
+        occurred_at_mst = convert_to_mst(event.get('occurredAt', 'N/A'))  # Convert to MST
+        event_data.append({
+            'Occurred At (MST)': occurred_at_mst,  # MST timestamp
+            'Event Subtype': event.get('subtype', 'N/A'),  # Event subtype
+            'Event Type': event.get('type', 'N/A'),  # Event type
+            'Description': event.get('description', 'N/A'),
+            'SSID': event.get('ssid', 'N/A'),
+            'Client MAC': event.get('clientMac', 'N/A'),
+            'Severity': event.get('severity', 'N/A'),  # Event severity
+            'Duration (ms)': event.get('durationMs', 'N/A'),  # Duration in milliseconds
+            'RSSI': event.get('rssi', 'N/A'),  # RSSI recorded
+        })
+        # Display Occurred At, Event Subtype, and Event Type
+        print(f"- Occurred At: {occurred_at_mst}, Event Subtype: {event.get('subtype', 'N/A')}, Event Type: {event.get('type', 'N/A')}, Severity: {event.get('severity', 'N/A')}, Duration: {event.get('durationMs', 'N/A')} ms, RSSI: {event.get('rssi', 'N/A')} dBm, SSID: {event.get('ssid', 'N/A')}")
+
+    # Save to a DataFrame and then to a spreadsheet
+    df = pd.DataFrame(event_data)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f'connectivity_events_{timestamp}.xlsx'
+    df.to_excel(filename, index=False)
+    print(f"Connectivity events saved to {filename}")
+
+def get_time_taken(start_time):
+    end_time = datetime.now()
+    duration = end_time - start_time
+    minutes = duration.seconds // 60
+    seconds = duration.seconds % 60
+    return minutes, seconds
+
+def main():
+    start_time = datetime.now()  # Start timer
+    print("\n\nWelcome to: Get Network Wireless Client Connectivity Events for a particular user/mac address.")
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+
+    if organizations:
+        if len(organizations) == 1:
+            selected_org_id = organizations[0]['id']
+            print(f"Automatically selected organization: {organizations[0]['name']} (ID: {selected_org_id})")
+        else:
+            display_organizations(organizations)
+            org_choice = int(input("Select an organization by number: "))
+            selected_org_id = organizations[org_choice - 1]['id']
+
+        networks = get_networks(api_key, selected_org_id)
+        if networks:
+            if len(networks) == 1:
+                selected_network_id = networks[0]['id']
+                print(f"Automatically selected network: {networks[0]['name']} (ID: {selected_network_id})")
+            else:
+                print("Available Networks:")
+                for idx, net in enumerate(networks, 1):
+                    print(f"{idx}. {net['name']} (ID: {net['id']})")
+                network_choice = int(input("Select a network by number: "))
+                selected_network_id = networks[network_choice - 1]['id']
+
+            clients = get_clients(api_key, selected_network_id)
+            if clients:
+                print("\nAvailable Clients:")
+                for idx, client in enumerate(clients, 1):
+                    print(f"{idx}. {client['description']} (Client ID: {client['id']})")
+                client_choice = int(input("Select a client by number: "))
+                selected_client_id = clients[client_choice - 1]['id']
+
+                start_time_input = input("Enter the start time (YYYY-MM-DD HH:MM:SS): ")
+                end_time_input = input("Enter the end time (YYYY-MM-DD HH:MM:SS): ")
+
+                # Validate input timestamps
+                try:
+                    start_time_dt = datetime.strptime(start_time_input, '%Y-%m-%d %H:%M:%S')
+                    end_time_dt = datetime.strptime(end_time_input, '%Y-%m-%d %H:%M:%S')
+                    start_time_str = start_time_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+                    end_time_str = end_time_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+                except ValueError:
+                    print("Invalid date format. Please use YYYY-MM-DD HH:MM:SS.")
+                    return
+
+                params = {
+                    'startTime': start_time_str,
+                    'endTime': end_time_str
+                }
+
+                connectivity_events = get_connectivity_events(api_key, selected_network_id, selected_client_id, params)
+                display_connectivity_events(connectivity_events, selected_network_id, selected_client_id, start_time_str, end_time_str)
+
+            else:
+                print("No clients found for the selected network.")
+
+    else:
+        print("No organizations found.")
+
+    minutes, seconds = get_time_taken(start_time)
+    print(f"\nJob completed in {minutes} minutes and {seconds} seconds.")
+
+if __name__ == '__main__':
+    main()
