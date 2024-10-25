@@ -2,7 +2,6 @@
 # https://jamiegprice.substack.com/
 
 import requests
-import pandas as pd
 from datetime import datetime
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
@@ -46,23 +45,6 @@ def display_networks(networks):
         print(f"{idx}. {network['name']} (ID: {network['id']})")
     print()
 
-def get_access_points(api_key, network_id):
-    headers = {
-        'X-Cisco-Meraki-API-Key': api_key,
-    }
-    try:
-        response = requests.get(BASE_URL + f'networks/{network_id}/devices', headers=headers)
-        response.raise_for_status()
-        return sorted(response.json(), key=lambda x: x['name'])  # Sort access points alphabetically
-    except requests.exceptions.RequestException as e:
-        print(f"Error occurred during API call: {e}")
-        return []
-
-def display_access_points(aps):
-    print("Access Points:")
-    for idx, ap in enumerate(aps, 1):
-        print(f"{idx}. {ap['name']} (MAC Address: {ap['mac']})")
-
 def get_time_taken(start_time):
     end_time = datetime.now()
     duration = end_time - start_time
@@ -89,12 +71,10 @@ def main():
         if networks:
             display_networks(networks)
             network_choice = int(input("Please enter the number of your network: "))
-            selected_network_id = networks[network_choice - 1]['id']
-
-            access_points = get_access_points(api_key, selected_network_id)
-
-            if access_points:
-                display_access_points(access_points)
+            selected_network = networks[network_choice - 1]
+            
+            print(f"\nSelected Network: {selected_network['name']}")
+            print("Thank you, I am starter code. Build on top of this starter code, and have a nice day.")
 
     minutes, seconds = get_time_taken(start_time)
     print(f"\nTime taken: {minutes} minutes and {seconds} seconds")
