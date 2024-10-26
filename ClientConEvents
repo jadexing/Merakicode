@@ -1,5 +1,14 @@
 #Get Network Wireless Client Connectivity Events
 #/networks/{networkId}/wireless/clients/{clientId}/connectivityEvents
+#List the wireless connectivity events for a client within a network in the timespan.
+# EX: 
+""
+- Occurred At: 2024-10-25 17:40:51 MDT, Event Subtype: success, Event Type: dhcp, Severity: good, Duration: 0 ms, RSSI: 21 dBm, SSID: N/A
+- Occurred At: 2024-10-25 17:40:52 MDT, Event Subtype: grabber, Event Type: roam, Severity: info, Duration: 15190 ms, RSSI: -1 dBm, SSID: N/A
+- Occurred At: 2024-10-25 17:40:52 MDT, Event Subtype: success, Event Type: connection, Severity: good, Duration: 150 ms, RSSI: 22 dBm, SSID: N/A
+- Occurred At: 2024-10-25 17:40:52 MDT, Event Subtype: success, Event Type: dns, Severity: good, Duration: 0 ms, RSSI: 22 dBm, SSID: N/A
+- Occurred At: 2024-10-25 17:40:56 MDT, Event Subtype: None, Event Type: disassoc, Severity: info, Duration: -1 ms, RSSI: 5 dBm, SSID: N/A
+""
 
 import requests
 import pandas as pd
