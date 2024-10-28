@@ -1,4 +1,6 @@
 #Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
+#Get Network Health Information: For the chosen network, retrieves health scores for connected clients from 
+#https://api.meraki.com/api/v1/networks/{network_id}/wireless/clients/healthScores
 
 import requests
 import time
