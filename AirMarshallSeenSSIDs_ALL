@@ -1,0 +1,159 @@
+# API  https://developer.cisco.com/meraki/api-v1/get-network-wireless-air-marshal/
+# Code asks for your API key and lets you select a network or all for SSIDs seen (Air Marshal Data).
+# This will create a separate spreadsheep for each Network if all Networks are chosen.
+#Twitter @jamiegprice https://jamiegprice.substack.com/
+
+
+import requests
+import datetime
+import csv
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+        return organizations[0]['id']
+    else:
+        org_idx = int(input("Enter the number of the organization: "))
+        return organizations[org_idx - 1]['id']
+
+def get_networks(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_networks(networks):
+    print("Networks:")
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks, 1):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+    print()
+
+def select_network(networks):
+    network_input = input("Please Enter the number of the network, or <Enter> for all networks: ")
+    if network_input == "":
+        return [network['id'] for network in networks]  # Return all network IDs
+    else:
+        network_idx = int(network_input)
+        return [networks[network_idx - 1]['id']]  # Return selected network ID
+
+def get_air_marshal_data(api_key, network_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'networks/{network_id}/wireless/airMarshal', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def time_ago(timestamp):
+    if not timestamp:
+        return "Unknown"
+    # Convert integer timestamp to a datetime object
+    if isinstance(timestamp, int):
+        timestamp = datetime.datetime.utcfromtimestamp(timestamp)
+    
+    now = datetime.datetime.utcnow()
+    diff = now - timestamp
+    seconds = int(diff.total_seconds())
+    if seconds < 60:
+        return f"{seconds} seconds ago"
+    elif seconds < 3600:
+        return f"{seconds // 60} minutes ago"
+    elif seconds < 86400:
+        return f"{seconds // 3600} hours ago"
+    elif seconds < 31536000:
+        return f"{seconds // 86400} days ago"
+    else:
+        return f"{seconds // 31536000} years ago"
+
+def save_to_csv(data, network_name):
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    csv_filename = f"Rogues_{network_name}_{timestamp}.csv"
+    
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as csv_file:
+        if data:
+            # Use all keys from the first entry as fieldnames
+            fieldnames = data[0].keys()
+            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for entry in data:
+                # Format 'lastSeen' and 'firstSeen' fields
+                entry["lastSeen"] = time_ago(entry.get("lastSeen"))
+                entry["firstSeen"] = time_ago(entry.get("firstSeen"))
+                writer.writerow(entry)
+    
+    print(f"Air Marshal data saved to {csv_filename}")
+
+def display_air_marshal_data(data):
+    print("Air Marshal Data:")
+    for entry in data:
+        last_seen_display = time_ago(entry.get("lastSeen"))
+        first_seen_display = time_ago(entry.get("firstSeen"))
+        print(f"SSID: {entry.get('ssid')} - BSSID: {entry.get('bssid')} - Channel: {entry.get('channel')} - "
+              f"Last Seen: {last_seen_display} - First Seen: {first_seen_display} - RSSI: {entry.get('rssi')} - "
+              f"Type: {entry.get('type')}")
+
+def main():
+    start_time = datetime.datetime.now()
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    if not organizations:
+        return
+    display_organizations(organizations)
+    selected_org_id = select_organization(organizations)
+    networks = get_networks(api_key, selected_org_id)
+    if not networks:
+        return
+    display_networks(networks)
+    selected_network_ids = select_network(networks)
+
+    # Get Air Marshal data for selected networks
+    for network_id in selected_network_ids:
+        air_marshal_data = get_air_marshal_data(api_key, network_id)
+        network_name = next(network['name'] for network in networks if network['id'] == network_id)
+        if air_marshal_data:
+            display_air_marshal_data(air_marshal_data)  # Display data in the desired format
+            # Save to CSV
+            save_to_csv(air_marshal_data, network_name)
+
+    end_time = datetime.datetime.now()
+    duration = end_time - start_time
+    duration_minutes = duration.total_seconds() / 60
+    print(f"Job completed in {duration_minutes:.2f} minutes.")
+
+if __name__ == "__main__":
+    main()
