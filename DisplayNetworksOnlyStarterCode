@@ -1,4 +1,5 @@
 #This code specifically displays networks in an org, alphabetically.
+# Runs /organizations/{org_id}/networks
 # @jamiegprice #WiFi Cool Cats (blog)
 
 import requests
