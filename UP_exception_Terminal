@@ -1,4 +1,9 @@
 #Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
+#The code uses the Meraki Dashboard API, specifically the following endpoints:
+#GET /organizations: Retrieves a list of organizations associated with the provided API key.
+#GET /organizations/{orgId}/devices: Fetches all devices associated with a specified organization.
+#GET /organizations/{orgId}/devices/statuses: Retrieves the current status of each device in the organization.
+
 
 import requests
 import pandas as pd
