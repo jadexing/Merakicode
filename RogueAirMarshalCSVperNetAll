@@ -1,11 +1,13 @@
 #API  https://developer.cisco.com/meraki/api-v1/get-network-wireless-air-marshal/
 #Code asks for your API key and lets you select a network for SSIDs seen (Air Marshal Data).
-#Can print one Network, or all into one spreadsheet per Network.
+#Can print one Network, or all into one spreadsheet per Network, into a folder.
 #Twitter @jamiegprice https://jamiegprice.substack.com/
+
 
 import requests
 import datetime
 import csv
+import os
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
 
@@ -99,9 +101,9 @@ def time_ago(timestamp):
     else:
         return f"{seconds // 31536000} years ago"
 
-def save_to_csv(data, network_name):
+def save_to_csv(data, network_name, folder_path):
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    csv_filename = f"Rogues_{network_name}_{timestamp}.csv"
+    csv_filename = os.path.join(folder_path, f"Rogues_{network_name}_{timestamp}.csv")
     
     with open(csv_filename, 'w', newline='', encoding='utf-8') as csv_file:
         # Filter out entries where wiredMacs is empty
@@ -150,14 +152,19 @@ def main():
     sorted_networks = display_networks(networks)  # Capture sorted networks for correct indexing
     selected_network_ids = select_network(sorted_networks)
 
+    # Create a new folder named "Rogues" with the current date and time
+    folder_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    folder_path = f"Rogues_{folder_timestamp}"
+    os.makedirs(folder_path, exist_ok=True)
+    
     # Get Air Marshal data for selected networks
     for network_id in selected_network_ids:
         air_marshal_data = get_air_marshal_data(api_key, network_id)
         network_name = next(network['name'] for network in sorted_networks if network['id'] == network_id)
         if air_marshal_data:
             display_air_marshal_data(air_marshal_data)  # Display data in the desired format
-            # Save to CSV
-            save_to_csv(air_marshal_data, network_name)
+            # Save to CSV in the newly created folder
+            save_to_csv(air_marshal_data, network_name, folder_path)
 
     end_time = datetime.datetime.now()
     duration = end_time - start_time
