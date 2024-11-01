@@ -3,10 +3,9 @@
 #GET /organizations: Retrieves a list of organizations associated with the provided API key.
 #GET /organizations/{orgId}/devices: Fetches all devices associated with a specified organization.
 #GET /organizations/{orgId}/devices/statuses: Retrieves the current status of each device in the organization.
-
+#Visual Added to readout to pick out the, "alerting," or "offline."
 
 import requests
-import pandas as pd
 from datetime import datetime, timedelta
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
@@ -111,6 +110,12 @@ def main():
                 serial = device.get('serial', 'N/A')
                 model = device.get('model', 'N/A')
                 status = status_data.get('status', 'N/A')
+
+                # Print the asterisk line for statuses that are not 'Online' or 'Dormant'
+                if status.lower() != 'online' and status.lower() != 'dormant':
+                    print("*********************************************************************")
+                    print("*********************************************************************")
+
                 print(f"Name: {name}, Serial: {serial}, Model: {model}, Status: {status}")
             
             print("\nDormant Devices:")
@@ -120,6 +125,7 @@ def main():
                 model = device.get('model', 'N/A')
                 status_data = next((d for d in device_statuses if d.get('serial') == serial), {})
                 status = status_data.get('status', 'N/A')
+                
                 print(f"Name: {name}, Serial: {serial}, Model: {model}, Status: {status}")
 
 if __name__ == "__main__":
