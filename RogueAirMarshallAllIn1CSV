@@ -1,6 +1,7 @@
 #API  https://developer.cisco.com/meraki/api-v1/get-network-wireless-air-marshal/
 #Code asks for your API key and lets you select a network for SSIDs seen (Air Marshal Data).
 #Can print one Network, or all into ONE CSV file.
+#Second file created for rogue count per network.
 #Twitter @jamiegprice https://jamiegprice.substack.com/
 
 
@@ -8,6 +9,7 @@ import requests
 import datetime
 import csv
 import os
+from collections import Counter
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
 
@@ -15,9 +17,7 @@ def get_api_key():
     return input("Enter your Meraki API key: ")
 
 def get_organizations(api_key):
-    headers = {
-        'X-Cisco-Meraki-API-Key': api_key,
-    }
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
     try:
         response = requests.get(BASE_URL + 'organizations', headers=headers)
         response.raise_for_status()
@@ -41,9 +41,7 @@ def select_organization(organizations):
         return organizations[org_idx]['id']
 
 def get_networks(api_key, org_id):
-    headers = {
-        'X-Cisco-Meraki-API-Key': api_key,
-    }
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
     try:
         response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
         response.raise_for_status()
@@ -58,20 +56,18 @@ def display_networks(networks):
     for idx, network in enumerate(sorted_networks):
         print(f"{idx}. {network['name']} (ID: {network['id']})")
     print()
-    return sorted_networks  # Return sorted networks for further use
+    return sorted_networks
 
 def select_network(networks):
     network_input = input("Please Enter the number of the network, or <Enter> for all networks: ")
     if network_input == "":
-        return [network['id'] for network in networks]  # Return all network IDs
+        return [network['id'] for network in networks]
     else:
         network_idx = int(network_input)
-        return [networks[network_idx]['id']]  # Return selected network ID
+        return [networks[network_idx]['id']]
 
 def get_air_marshal_data(api_key, network_id):
-    headers = {
-        'X-Cisco-Meraki-API-Key': api_key,
-    }
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
     try:
         response = requests.get(BASE_URL + f'networks/{network_id}/wireless/airMarshal', headers=headers)
         response.raise_for_status()
@@ -83,10 +79,8 @@ def get_air_marshal_data(api_key, network_id):
 def time_ago(timestamp):
     if not timestamp:
         return "Unknown"
-    # Convert integer timestamp to a datetime object
     if isinstance(timestamp, int):
         timestamp = datetime.datetime.utcfromtimestamp(timestamp)
-    
     now = datetime.datetime.utcnow()
     diff = now - timestamp
     seconds = int(diff.total_seconds())
@@ -104,40 +98,34 @@ def time_ago(timestamp):
 def save_to_csv(all_data):
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     csv_filename = f"Rogues_Data_{timestamp}.csv"
-    
-    # Check if file exists; if not, create it with headers
     file_exists = os.path.isfile(csv_filename)
     
     with open(csv_filename, 'a', newline='', encoding='utf-8') as csv_file:
-        # Use all keys from the first entry as fieldnames and add 'Network Name'
         fieldnames = ['Network Name'] + list(all_data[0].keys())
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         
         if not file_exists:
-            writer.writeheader()  # Write header only if file did not exist
+            writer.writeheader()
             
         for entry in all_data:
-            # Format 'lastSeen', 'firstSeen', and 'wiredLastSeen' fields
-            entry["lastSeen"] = time_ago(entry.get("lastSeen"))
-            entry["firstSeen"] = time_ago(entry.get("firstSeen"))
-            entry["wiredLastSeen"] = time_ago(entry.get("wiredLastSeen"))  # Format wiredLastSeen
-            # Add the network name to the entry
             writer.writerow(entry)
     
-    print(f"Air Marshal data saved to {csv_filename}")
+    print(f"\nAir Marshal data saved to {csv_filename}")
 
-def display_air_marshal_data(data, network_name):
-    print(f"Air Marshal Data for {network_name}:")
-    for entry in data:
-        if entry.get("wiredMacs"):  # Only display if wiredMacs has data
-            last_seen_display = time_ago(entry.get("lastSeen"))
-            first_seen_display = time_ago(entry.get("firstSeen"))
-            wired_last_seen_display = time_ago(entry.get("wiredLastSeen"))
-            print(f"SSID: {entry.get('ssid')} - BSSIDs: {entry.get('bssids')} - Channels: {entry.get('channels')} - "
-                  f"First Seen: {first_seen_display} - Last Seen: {last_seen_display} - "
-                  f"Wired MACs: {entry.get('wiredMacs')} - Wired VLANs: {entry.get('wiredVlans')} - "
-                  f"Wired Last Seen: {wired_last_seen_display} - RSSI: {entry.get('rssi')} - "
-                  f"Type: {entry.get('type')}")
+def save_mac_counts(mac_counts):
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    csv_filename = f"Mac_Counts_{timestamp}.csv"
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["Network Name", "Wired MAC Count"])
+        for network_name, count in mac_counts.items():
+            writer.writerow([network_name, count])
+    print(f"MAC count summary saved to {csv_filename}")
+
+def display_mac_counts(mac_counts):
+    print("\nWired MAC Counts by Network:")
+    for network_name, count in mac_counts.items():
+        print(f"{network_name}: {count}")
 
 def main():
     start_time = datetime.datetime.now()
@@ -150,33 +138,38 @@ def main():
     networks = get_networks(api_key, selected_org_id)
     if not networks:
         return
-    sorted_networks = display_networks(networks)  # Capture sorted networks for correct indexing
+    sorted_networks = display_networks(networks)
     selected_network_ids = select_network(sorted_networks)
 
-    all_data = []  # Initialize list to hold all network data
+    all_data = []
+    mac_counter = Counter()
 
-    # Get Air Marshal data for selected networks
     for network_id in selected_network_ids:
         air_marshal_data = get_air_marshal_data(api_key, network_id)
         network_name = next(network['name'] for network in sorted_networks if network['id'] == network_id)
         
-        # Filter air marshal data to only include entries with wiredMacs
         filtered_data = [entry for entry in air_marshal_data if entry.get("wiredMacs")]
-        
-        if filtered_data:
-            display_air_marshal_data(filtered_data, network_name)  # Display data in the desired format
-            # Append filtered data with the network name
-            for entry in filtered_data:
-                entry["Network Name"] = network_name  # Add network name to each entry
-                all_data.append(entry)  # Append to all_data list
+        for entry in filtered_data:
+            entry["Network Name"] = network_name
+            entry["lastSeen"] = time_ago(entry.get("lastSeen"))
+            entry["firstSeen"] = time_ago(entry.get("firstSeen"))
+            entry["wiredLastSeen"] = time_ago(entry.get("wiredLastSeen"))
+            all_data.append(entry)
+            mac_counter[network_name] += len(entry.get("wiredMacs", []))
+            
+            # Print each entry to the terminal
+            print(f"\nData for Network '{network_name}':")
+            for key, value in entry.items():
+                print(f"{key}: {value}")
+            print("-" * 50)
 
-    # Save all collected data to CSV once at the end
     save_to_csv(all_data)
+    save_mac_counts(mac_counter)
+    display_mac_counts(mac_counter)
 
     end_time = datetime.datetime.now()
     duration = end_time - start_time
-    duration_minutes = duration.total_seconds() / 60
-    print(f"Job completed in {duration_minutes:.2f} minutes.")
+    print(f"\nJob completed in {duration.total_seconds() / 60:.2f} minutes.")
 
 if __name__ == "__main__":
     main()
