@@ -103,16 +103,21 @@ def save_to_csv(data, network_name):
     csv_filename = f"Rogues_{network_name}_{timestamp}.csv"
     
     with open(csv_filename, 'w', newline='', encoding='utf-8') as csv_file:
-        if data:
-            # Use all keys from the first entry as fieldnames
-            fieldnames = data[0].keys()
+        # Filter out entries where wiredMacs is empty
+        filtered_data = [entry for entry in data if entry.get("wiredMacs")]
+        if filtered_data:
+            # Use all keys from the first entry as fieldnames and add 'Network Name'
+            fieldnames = ['Network Name'] + list(filtered_data[0].keys())
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
             writer.writeheader()
             
-            for entry in data:
-                # Format 'lastSeen' and 'firstSeen' fields
+            for entry in filtered_data:
+                # Format 'lastSeen', 'firstSeen', and 'wiredLastSeen' fields
                 entry["lastSeen"] = time_ago(entry.get("lastSeen"))
                 entry["firstSeen"] = time_ago(entry.get("firstSeen"))
+                entry["wiredLastSeen"] = time_ago(entry.get("wiredLastSeen"))  # Format wiredLastSeen
+                # Add the network name to the entry
+                entry["Network Name"] = network_name
                 writer.writerow(entry)
     
     print(f"Air Marshal data saved to {csv_filename}")
@@ -120,11 +125,15 @@ def save_to_csv(data, network_name):
 def display_air_marshal_data(data):
     print("Air Marshal Data:")
     for entry in data:
-        last_seen_display = time_ago(entry.get("lastSeen"))
-        first_seen_display = time_ago(entry.get("firstSeen"))
-        print(f"SSID: {entry.get('ssid')} - BSSID: {entry.get('bssid')} - Channel: {entry.get('channel')} - "
-              f"Last Seen: {last_seen_display} - First Seen: {first_seen_display} - RSSI: {entry.get('rssi')} - "
-              f"Type: {entry.get('type')}")
+        if entry.get("wiredMacs"):  # Only display if wiredMacs has data
+            last_seen_display = time_ago(entry.get("lastSeen"))
+            first_seen_display = time_ago(entry.get("firstSeen"))
+            wired_last_seen_display = time_ago(entry.get("wiredLastSeen"))
+            print(f"SSID: {entry.get('ssid')} - BSSIDs: {entry.get('bssids')} - Channels: {entry.get('channels')} - "
+                  f"First Seen: {first_seen_display} - Last Seen: {last_seen_display} - "
+                  f"Wired MACs: {entry.get('wiredMacs')} - Wired VLANs: {entry.get('wiredVlans')} - "
+                  f"Wired Last Seen: {wired_last_seen_display} - RSSI: {entry.get('rssi')} - "
+                  f"Type: {entry.get('type')}")
 
 def main():
     start_time = datetime.datetime.now()
