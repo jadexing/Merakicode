@@ -4,7 +4,6 @@
 #Comes with a second file to count the times the times a unique rogue appears.
 #Twitter @jamiegprice https://jamiegprice.substack.com/
 
-
 import requests
 import datetime
 import csv
@@ -29,10 +28,10 @@ def get_organizations(api_key):
         return []
 
 def display_organizations(organizations):
-    print("Organizations:")
+    print("\n=== Organization Selection ===")
     for idx, org in enumerate(organizations):
         print(f"{idx}. {org['name']} (ID: {org['id']})")
-    print()
+    print("\n")
 
 def select_organization(organizations):
     if len(organizations) == 1:
@@ -55,11 +54,11 @@ def get_networks(api_key, org_id):
         return []
 
 def display_networks(networks):
-    print("Networks:")
+    print("\n=== Network Selection ===")
     sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
     for idx, network in enumerate(sorted_networks):
         print(f"{idx}. {network['name']} (ID: {network['id']})")
-    print()
+    print("\n")
     return sorted_networks
 
 def select_network(networks):
@@ -123,17 +122,22 @@ def save_to_csv(data, network_name, folder_path):
     print(f"Air Marshal data saved to {csv_filename}")
 
 def display_air_marshal_data(data):
-    print("Air Marshal Data:")
+    print("\n=== Air Marshal Data ===")
     for entry in data:
         if entry.get("wiredMacs"):
-            last_seen_display = time_ago(entry.get("lastSeen"))
-            first_seen_display = time_ago(entry.get("firstSeen"))
-            wired_last_seen_display = time_ago(entry.get("wiredLastSeen"))
-            print(f"SSID: {entry.get('ssid')} - BSSIDs: {entry.get('bssids')} - Channels: {entry.get('channels')} - "
-                  f"First Seen: {first_seen_display} - Last Seen: {last_seen_display} - "
-                  f"Wired MACs: {entry.get('wiredMacs')} - Wired VLANs: {entry.get('wiredVlans')} - "
-                  f"Wired Last Seen: {wired_last_seen_display} - RSSI: {entry.get('rssi')} - "
-                  f"Type: {entry.get('type')}")
+            print("\n--- Entry ---")
+            print(f"SSID: {entry.get('ssid')}")
+            print(f"BSSIDs: {entry.get('bssids')}")
+            print(f"Channels: {entry.get('channels')}")
+            print(f"First Seen: {time_ago(entry.get('firstSeen'))}")
+            print(f"Last Seen: {time_ago(entry.get('lastSeen'))}")
+            print(f"Wired MACs: {entry.get('wiredMacs')}")
+            print(f"Wired VLANs: {entry.get('wiredVlans')}")
+            print(f"Wired Last Seen: {time_ago(entry.get('wiredLastSeen'))}")
+            print(f"RSSI: {entry.get('rssi')}")
+            print(f"Type: {entry.get('type')}")
+            print("-------------------------")
+    print("\n")
 
 def save_network_count(network_counts, folder_path):
     count_filename = os.path.join(folder_path, "network_counts.csv")
@@ -141,8 +145,9 @@ def save_network_count(network_counts, folder_path):
         writer = csv.writer(csv_file)
         writer.writerow(["Network Name", "Count with Wired MACs"])
         for network_name, count in network_counts.items():
+            print(f"{network_name}: {count} entries with Wired MACs")
             writer.writerow([network_name, count])
-    print(f"Network counts saved to {count_filename}")
+    print(f"\nNetwork counts saved to {count_filename}\n")
 
 def main():
     start_time = datetime.datetime.now()
