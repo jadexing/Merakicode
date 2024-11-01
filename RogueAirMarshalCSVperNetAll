@@ -1,6 +1,6 @@
 #API  https://developer.cisco.com/meraki/api-v1/get-network-wireless-air-marshal/
 #Code asks for your API key and lets you select a network for SSIDs seen (Air Marshal Data).
-#Can print one Network, or all into separate CSV files.
+#Can print one Network, or all into ONE csv file.
 #Twitter @jamiegprice https://jamiegprice.substack.com/
 
 import requests
