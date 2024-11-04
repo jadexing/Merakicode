@@ -1,7 +1,20 @@
-#Listnetworks and their SSIDs starter code. It will place data into a spreadsheet.
-# Twitter @jamiegprice
+#This code uses the Meraki API to retrieve and list network and SSID information for a selected Meraki organization. It specifically calls three Meraki API endpoints:
+#organizations: This endpoint retrieves a list of all organizations associated with the API key provided by the user.
+#/organizations/{organizationId}/networks: This endpoint fetches all networks within a specified organization.
+#/networks/{networkId}/wireless/ssids: This endpoint retrieves a list of SSIDs for a particular network, including details such as SSID name, enabled status, authentication mode, and RADIUS server details (if applicable).
 
-# List networks and their SSIDs with saving to Excel spreadsheet.
+"""
+The program's main functionality:
+
+Prompts the user for a Meraki API key, retrieves organizations, and allows the user to select one.
+Fetches networks within the chosen organization, displaying them in alphabetical order.
+Prompts the user to filter SSIDs based on enabled status and the presence of RADIUS servers.
+Collects and displays the SSID information based on these filters.
+Saves the SSID data into an Excel file (meraki_ssid_configurations.xlsx), including columns for network name, network ID, SSID number, SSID name, enabled status, authentication mode, and RADIUS server IP addresses.
+This program is useful for network administrators who need to audit and manage SSIDs across multiple networks within a Meraki organization.
+"""
+
+
 import requests
 import datetime
 import openpyxl
