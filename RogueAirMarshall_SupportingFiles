@@ -10,7 +10,7 @@ User Input and Setup: The script starts by prompting the user for their Meraki A
 Functions
 The rogue AP data is presented in three formats:
 (1) CSV File: Saves all details of each rogue AP, including BSSID identifiers, for comprehensive record-keeping.
-(2) Detailed Text File (Identified Rogues with bssid identifiers_<timestamp>.txt): Contains full details of each rogue AP, including bssids, and ends with a count of total rogue MAC addresses across all networks.
+(2) Summary CSV (Identified Rogues with bssid identifiers_<timestamp>.txt): Contains full details of each rogue AP, including bssids, and ends with a count of total rogue MAC addresses across all networks.
 (3) Summary Text File (Identified Rogues Summarized_<timestamp>.txt): A condensed version that omits bssids and includes report metadata (name, time, date, and total rogue count).
 Execution Time: The script calculates and displays the total execution time in minutes.
 
@@ -137,50 +137,31 @@ def save_mac_counts(mac_counts):
             writer.writerow([network_name, count])
     print(f"MAC count summary saved to {csv_filename}")
 
+def save_summary_text_file(mac_counts, all_data):
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    summary_filename = f"Identified Rogues Summarized_{timestamp}.txt"
+    with open(summary_filename, 'w', encoding='utf-8') as file:
+        file.write("Rogue Summary Report\n")
+        file.write(f"Date and Time: {timestamp}\n")
+        file.write("MAC Address Count:\n\n")
+        for network_name, count in mac_counts.items():
+            file.write(f"Network Name: {network_name}\n")
+            file.write(f"MAC Count: {count}\n")
+            file.write("-" * 50 + "\n")
+
+        file.write("\nDetailed Rogue Data (excluding BSSIDs):\n\n")
+        for entry in all_data:
+            file.write(f"Network Name: {entry['Network Name']}\n")
+            for key, value in entry.items():
+                if key != "bssids":  # Exclude bssid data
+                    file.write(f"{key}: {value}\n")
+            file.write("-" * 50 + "\n")
+    print(f"Summary text file saved to {summary_filename}")
+
 def display_mac_counts(mac_counts):
     print("\nWired MAC Counts by Network:")
     for network_name, count in mac_counts.items():
         print(f"{network_name}: {count}")
-
-def save_terminal_output(all_data, mac_counter):
-    # Generate a timestamp for the file name
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    detailed_filename = f"Identified Rogues with bssid identifiers_{timestamp}.txt"
-    summary_filename = f"Identified Rogues Summarized_{timestamp}.txt"
-    total_mac_count = sum(mac_counter.values())
-
-    # Save detailed report with all fields, including bssids
-    with open(detailed_filename, 'w', encoding='utf-8') as detailed_file:
-        for entry in all_data:
-            network_name = entry["Network Name"]
-            detailed_file.write(f"\nData for Network '{network_name}':\n")
-            for key, value in entry.items():
-                detailed_file.write(f"{key}: {value}\n")
-            detailed_file.write("-" * 50 + "\n")
-        
-        detailed_file.write(f"\nTotal Rogues: {total_mac_count}\n")
-    
-    print(f"Detailed terminal output saved to {detailed_filename}")
-
-    # Save summary report without bssids
-    with open(summary_filename, 'w', encoding='utf-8') as summary_file:
-        summary_file.write("Name of Report: Identified Rogues - Summarized\n")
-        summary_file.write(f"Time and Date of Report: {timestamp}\n")
-        
-        # Add network names in the report header
-        network_names = ", ".join({entry['Network Name'] for entry in all_data})
-        summary_file.write(f"Network Name(s): {network_names}\n")
-        
-        summary_file.write(f"Total Rogues: {total_mac_count}\n\n")
-        for entry in all_data:
-            network_name = entry["Network Name"]
-            summary_file.write(f"Data for Network '{network_name}':\n")
-            for key, value in entry.items():
-                if key != "bssids":  # Exclude bssids in the summary file
-                    summary_file.write(f"{key}: {value}\n")
-            summary_file.write("-" * 50 + "\n")
-    
-    print(f"Summary report saved to {summary_filename}")
 
 def main():
     start_time = datetime.datetime.now()
@@ -220,8 +201,8 @@ def main():
 
     save_to_csv(all_data)
     save_mac_counts(mac_counter)
+    save_summary_text_file(mac_counter, all_data)
     display_mac_counts(mac_counter)
-    save_terminal_output(all_data, mac_counter)
 
     end_time = datetime.datetime.now()
     duration = end_time - start_time
