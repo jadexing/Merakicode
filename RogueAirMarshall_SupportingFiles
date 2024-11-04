@@ -1,0 +1,231 @@
+"""
+APIs Used
+GET /organizations: Retrieves a list of organizations the API key has access to, allowing the user to select one.
+GET /organizations/{organizationId}/networks: Retrieves a list of networks within the selected organization.
+GET /networks/{networkId}/wireless/airMarshal: Fetches rogue AP information (Air Marshal data) for each selected network. This endpoint provides details about rogue APs, such as bssids, MAC addresses, and timestamps for first and last sightings.
+
+Code Summary
+User Input and Setup: The script starts by prompting the user for their Meraki API key, which is then used to authenticate subsequent API calls. The user selects an organization from a list (if more than one exists) and then chooses one or more networks within that organization.
+
+Functions
+The rogue AP data is presented in three formats:
+(1) CSV File: Saves all details of each rogue AP, including BSSID identifiers, for comprehensive record-keeping.
+(2) Detailed Text File (Identified Rogues with bssid identifiers_<timestamp>.txt): Contains full details of each rogue AP, including bssids, and ends with a count of total rogue MAC addresses across all networks.
+(3) Summary Text File (Identified Rogues Summarized_<timestamp>.txt): A condensed version that omits bssids and includes report metadata (name, time, date, and total rogue count).
+Execution Time: The script calculates and displays the total execution time in minutes.
+
+Data Retrieval
+The script fetches Air Marshal data for each selected network, which includes rogue access point (AP) information.For each rogue entry, timestamps like lastSeen, firstSeen, and wiredLastSeen are formatted to show how long ago each event occurred.
+
+#Twitter @jamiegprice https://jamiegprice.substack.com/
+"""
+
+import requests
+import datetime
+import csv
+import os
+from collections import Counter
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+        return organizations[0]['id']
+    else:
+        org_idx = int(input("Enter the number of the organization: "))
+        return organizations[org_idx]['id']
+
+def get_networks(api_key, org_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_networks(networks):
+    print("Networks:")
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+    print()
+    return sorted_networks
+
+def select_network(networks):
+    network_input = input("Please Enter the number of the network, or <Enter> for all networks: ")
+    if network_input == "":
+        return [network['id'] for network in networks]
+    else:
+        network_idx = int(network_input)
+        return [networks[network_idx]['id']]
+
+def get_air_marshal_data(api_key, network_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    try:
+        response = requests.get(BASE_URL + f'networks/{network_id}/wireless/airMarshal', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def time_ago(timestamp):
+    if not timestamp:
+        return "Unknown"
+    if isinstance(timestamp, int):
+        timestamp = datetime.datetime.utcfromtimestamp(timestamp)
+    now = datetime.datetime.utcnow()
+    diff = now - timestamp
+    seconds = int(diff.total_seconds())
+    if seconds < 60:
+        return f"{seconds} seconds ago"
+    elif seconds < 3600:
+        return f"{seconds // 60} minutes ago"
+    elif seconds < 86400:
+        return f"{seconds // 3600} hours ago"
+    elif seconds < 31536000:
+        return f"{seconds // 86400} days ago"
+    else:
+        return f"{seconds // 31536000} years ago"
+
+def save_to_csv(all_data):
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    csv_filename = f"Rogues_Data_{timestamp}.csv"
+    file_exists = os.path.isfile(csv_filename)
+    
+    with open(csv_filename, 'a', newline='', encoding='utf-8') as csv_file:
+        fieldnames = ['Network Name'] + list(all_data[0].keys())
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        
+        if not file_exists:
+            writer.writeheader()
+            
+        for entry in all_data:
+            writer.writerow(entry)
+    
+    print(f"\nAir Marshal data saved to {csv_filename}")
+
+def save_mac_counts(mac_counts):
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    csv_filename = f"Mac_Counts_{timestamp}.csv"
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["Network Name", "Wired MAC Count"])
+        for network_name, count in mac_counts.items():
+            writer.writerow([network_name, count])
+    print(f"MAC count summary saved to {csv_filename}")
+
+def display_mac_counts(mac_counts):
+    print("\nWired MAC Counts by Network:")
+    for network_name, count in mac_counts.items():
+        print(f"{network_name}: {count}")
+
+def save_terminal_output(all_data, mac_counter):
+    # Generate a timestamp for the file name
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    detailed_filename = f"Identified Rogues with bssid identifiers_{timestamp}.txt"
+    summary_filename = f"Identified Rogues Summarized_{timestamp}.txt"
+    total_mac_count = sum(mac_counter.values())
+
+    # Save detailed report with all fields, including bssids
+    with open(detailed_filename, 'w', encoding='utf-8') as detailed_file:
+        for entry in all_data:
+            network_name = entry["Network Name"]
+            detailed_file.write(f"\nData for Network '{network_name}':\n")
+            for key, value in entry.items():
+                detailed_file.write(f"{key}: {value}\n")
+            detailed_file.write("-" * 50 + "\n")
+        
+        detailed_file.write(f"\nTotal Rogues: {total_mac_count}\n")
+    
+    print(f"Detailed terminal output saved to {detailed_filename}")
+
+    # Save summary report without bssids
+    with open(summary_filename, 'w', encoding='utf-8') as summary_file:
+        summary_file.write("Name of Report: Identified Rogues - Summarized\n")
+        summary_file.write(f"Time and Date of Report: {timestamp}\n")
+        
+        # Add network names in the report header
+        network_names = ", ".join({entry['Network Name'] for entry in all_data})
+        summary_file.write(f"Network Name(s): {network_names}\n")
+        
+        summary_file.write(f"Total Rogues: {total_mac_count}\n\n")
+        for entry in all_data:
+            network_name = entry["Network Name"]
+            summary_file.write(f"Data for Network '{network_name}':\n")
+            for key, value in entry.items():
+                if key != "bssids":  # Exclude bssids in the summary file
+                    summary_file.write(f"{key}: {value}\n")
+            summary_file.write("-" * 50 + "\n")
+    
+    print(f"Summary report saved to {summary_filename}")
+
+def main():
+    start_time = datetime.datetime.now()
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    if not organizations:
+        return
+    display_organizations(organizations)
+    selected_org_id = select_organization(organizations)
+    networks = get_networks(api_key, selected_org_id)
+    if not networks:
+        return
+    sorted_networks = display_networks(networks)
+    selected_network_ids = select_network(sorted_networks)
+
+    all_data = []
+    mac_counter = Counter()
+
+    for network_id in selected_network_ids:
+        air_marshal_data = get_air_marshal_data(api_key, network_id)
+        network_name = next(network['name'] for network in sorted_networks if network['id'] == network_id)
+        
+        filtered_data = [entry for entry in air_marshal_data if entry.get("wiredMacs")]
+        for entry in filtered_data:
+            entry["Network Name"] = network_name
+            entry["lastSeen"] = time_ago(entry.get("lastSeen"))
+            entry["firstSeen"] = time_ago(entry.get("firstSeen"))
+            entry["wiredLastSeen"] = time_ago(entry.get("wiredLastSeen"))
+            all_data.append(entry)
+            mac_counter[network_name] += len(entry.get("wiredMacs", []))
+            
+            # Print each entry to the terminal
+            print(f"\nData for Network '{network_name}':")
+            for key, value in entry.items():
+                print(f"{key}: {value}")
+            print("-" * 50)
+
+    save_to_csv(all_data)
+    save_mac_counts(mac_counter)
+    display_mac_counts(mac_counter)
+    save_terminal_output(all_data, mac_counter)
+
+    end_time = datetime.datetime.now()
+    duration = end_time - start_time
+    print(f"\nJob completed in {duration.total_seconds() / 60:.2f} minutes.")
+
+if __name__ == "__main__":
+    main()
