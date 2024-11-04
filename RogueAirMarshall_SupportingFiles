@@ -1,24 +1,21 @@
 """
-APIs Used
-GET /organizations: Retrieves a list of organizations the API key has access to, allowing the user to select one.
-GET /organizations/{organizationId}/networks: Retrieves a list of networks within the selected organization.
-GET /networks/{networkId}/wireless/airMarshal: Fetches rogue AP information (Air Marshal data) for each selected network. This endpoint provides details about rogue APs, such as bssids, MAC addresses, and timestamps for first and last sightings.
+This code leverages the Cisco Meraki API to retrieve rogue device data from Meraki networks and produces both a summarized 
+text report and a CSV file with MAC address counts and rogue device details. Below is a breakdown of the APIs and a summary of the code functionality.
 
-Code Summary
-User Input and Setup: The script starts by prompting the user for their Meraki API key, which is then used to authenticate subsequent API calls. The user selects an organization from a list (if more than one exists) and then chooses one or more networks within that organization.
+APIs in Use
+GET /organizations
+GET /organizations/{organizationId}/networks
+GET /networks/{networkId}/wireless/airMarshal
 
-Functions
-The rogue AP data is presented in three formats:
-(1) CSV File: Saves all details of each rogue AP, including BSSID identifiers, for comprehensive record-keeping.
-(2) Summary CSV (Identified Rogues with bssid identifiers_<timestamp>.txt): Contains full details of each rogue AP, including bssids, and ends with a count of total rogue MAC addresses across all networks.
-(3) Summary Text File (Identified Rogues Summarized_<timestamp>.txt): A condensed version that omits bssids and includes report metadata (name, time, date, and total rogue count).
-Execution Time: The script calculates and displays the total execution time in minutes.
-
-Data Retrieval
-The script fetches Air Marshal data for each selected network, which includes rogue access point (AP) information.For each rogue entry, timestamps like lastSeen, firstSeen, and wiredLastSeen are formatted to show how long ago each event occurred.
+CSV File: Saves a summarized CSV file (Summarized_Data_<timestamp>.csv) that excludes BSSID data, with details about each rogue device and the total MAC address count per network.
+Text Summary Report: Generates a text report (Identified_Rogues_Summarized_<timestamp>.txt) summarizing each rogue device (again omitting BSSID data), the MAC address count, and network details.
+Job Duration Reporting: timestamp.
 
 #Twitter @jamiegprice https://jamiegprice.substack.com/
+
 """
+
+
 
 import requests
 import datetime
@@ -112,20 +109,23 @@ def time_ago(timestamp):
 
 def save_to_csv(all_data):
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    csv_filename = f"Rogues_Data_{timestamp}.csv"
+    csv_filename = f"Summarized_Data_{timestamp}.csv"
     file_exists = os.path.isfile(csv_filename)
     
+    # Exclude 'bssids' field
+    filtered_data = [{k: v for k, v in entry.items() if k != 'bssids'} for entry in all_data]
+
     with open(csv_filename, 'a', newline='', encoding='utf-8') as csv_file:
-        fieldnames = ['Network Name'] + list(all_data[0].keys())
+        fieldnames = ['Network Name'] + list(filtered_data[0].keys())
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         
         if not file_exists:
             writer.writeheader()
             
-        for entry in all_data:
+        for entry in filtered_data:
             writer.writerow(entry)
     
-    print(f"\nAir Marshal data saved to {csv_filename}")
+    print(f"\nSummarized data saved to {csv_filename}")
 
 def save_mac_counts(mac_counts):
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -139,7 +139,7 @@ def save_mac_counts(mac_counts):
 
 def save_summary_text_file(mac_counts, all_data):
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    summary_filename = f"Identified Rogues Summarized_{timestamp}.txt"
+    summary_filename = f"Identified_Rogues_Summarized_{timestamp}.txt"
     with open(summary_filename, 'w', encoding='utf-8') as file:
         file.write("Rogue Summary Report\n")
         file.write(f"Date and Time: {timestamp}\n")
