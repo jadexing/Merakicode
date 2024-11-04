@@ -15,8 +15,6 @@ Job Duration Reporting: timestamp.
 
 """
 
-
-
 import requests
 import datetime
 import csv
@@ -71,12 +69,27 @@ def display_networks(networks):
     return sorted_networks
 
 def select_network(networks):
-    network_input = input("Please Enter the number of the network, or <Enter> for all networks: ")
+    network_input = input("Enter the network numbers (e.g., 1,2,3 or 1-3) or <Enter> for all networks: ")
     if network_input == "":
         return [network['id'] for network in networks]
-    else:
-        network_idx = int(network_input)
-        return [networks[network_idx]['id']]
+
+    selected_indices = []
+    for part in network_input.split(','):
+        if '-' in part:
+            start, end = map(int, part.split('-'))
+            selected_indices.extend(range(start, end + 1))
+        else:
+            selected_indices.append(int(part))
+
+    selected_network_ids = [
+        networks[idx]['id'] for idx in selected_indices if 0 <= idx < len(networks)
+    ]
+    
+    if not selected_network_ids:
+        print("No valid networks selected. Please check your input and try again.")
+        return []
+    
+    return selected_network_ids
 
 def get_air_marshal_data(api_key, network_id):
     headers = {'X-Cisco-Meraki-API-Key': api_key}
@@ -108,21 +121,22 @@ def time_ago(timestamp):
         return f"{seconds // 31536000} years ago"
 
 def save_to_csv(all_data):
+    if not all_data:
+        print("No data to save.")
+        return
+
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     csv_filename = f"Summarized_Data_{timestamp}.csv"
     file_exists = os.path.isfile(csv_filename)
     
-    # Exclude 'bssids' field
-    filtered_data = [{k: v for k, v in entry.items() if k != 'bssids'} for entry in all_data]
-
     with open(csv_filename, 'a', newline='', encoding='utf-8') as csv_file:
-        fieldnames = ['Network Name'] + list(filtered_data[0].keys())
+        fieldnames = ['Network Name'] + [key for key in all_data[0] if key != 'bssids']
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         
         if not file_exists:
             writer.writeheader()
             
-        for entry in filtered_data:
+        for entry in all_data:
             writer.writerow(entry)
     
     print(f"\nSummarized data saved to {csv_filename}")
@@ -137,26 +151,24 @@ def save_mac_counts(mac_counts):
             writer.writerow([network_name, count])
     print(f"MAC count summary saved to {csv_filename}")
 
-def save_summary_text_file(mac_counts, all_data):
+def save_summary_text(mac_counts, all_data):
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    summary_filename = f"Identified_Rogues_Summarized_{timestamp}.txt"
-    with open(summary_filename, 'w', encoding='utf-8') as file:
-        file.write("Rogue Summary Report\n")
-        file.write(f"Date and Time: {timestamp}\n")
-        file.write("MAC Address Count:\n\n")
-        for network_name, count in mac_counts.items():
-            file.write(f"Network Name: {network_name}\n")
-            file.write(f"MAC Count: {count}\n")
-            file.write("-" * 50 + "\n")
-
-        file.write("\nDetailed Rogue Data (excluding BSSIDs):\n\n")
+    txt_filename = f"Identified_Rogues_Summary_{timestamp}.txt"
+    
+    with open(txt_filename, 'w') as txt_file:
+        txt_file.write(f"Name of report: Identified Rogues\n")
+        txt_file.write(f"Date and time: {timestamp}\n")
+        txt_file.write(f"Total MAC Address Count: {sum(mac_counts.values())}\n\n")
+        
         for entry in all_data:
-            file.write(f"Network Name: {entry['Network Name']}\n")
+            network_name = entry['Network Name']
+            txt_file.write(f"Network: {network_name}\n")
             for key, value in entry.items():
-                if key != "bssids":  # Exclude bssid data
-                    file.write(f"{key}: {value}\n")
-            file.write("-" * 50 + "\n")
-    print(f"Summary text file saved to {summary_filename}")
+                if key != 'bssids':
+                    txt_file.write(f"{key}: {value}\n")
+            txt_file.write("-" * 50 + "\n")
+    
+    print(f"Summary text report saved to {txt_filename}")
 
 def display_mac_counts(mac_counts):
     print("\nWired MAC Counts by Network:")
@@ -177,6 +189,10 @@ def main():
     sorted_networks = display_networks(networks)
     selected_network_ids = select_network(sorted_networks)
 
+    if not selected_network_ids:
+        print("No networks selected. Exiting.")
+        return
+
     all_data = []
     mac_counter = Counter()
 
@@ -190,10 +206,10 @@ def main():
             entry["lastSeen"] = time_ago(entry.get("lastSeen"))
             entry["firstSeen"] = time_ago(entry.get("firstSeen"))
             entry["wiredLastSeen"] = time_ago(entry.get("wiredLastSeen"))
+            entry.pop("bssids", None)
             all_data.append(entry)
             mac_counter[network_name] += len(entry.get("wiredMacs", []))
             
-            # Print each entry to the terminal
             print(f"\nData for Network '{network_name}':")
             for key, value in entry.items():
                 print(f"{key}: {value}")
@@ -201,7 +217,7 @@ def main():
 
     save_to_csv(all_data)
     save_mac_counts(mac_counter)
-    save_summary_text_file(mac_counter, all_data)
+    save_summary_text(mac_counter, all_data)
     display_mac_counts(mac_counter)
 
     end_time = datetime.datetime.now()
