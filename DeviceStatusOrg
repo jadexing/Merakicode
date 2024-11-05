@@ -1,5 +1,6 @@
 ###Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
 #This script runs this: /organizations/{organizationId}/devices/statuses
+#This produces a data file.
 
 import requests
 import datetime
