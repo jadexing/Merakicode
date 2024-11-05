@@ -15,8 +15,6 @@ Timestamp: Prints a timestamp at the end of the output to show when the report w
 This code helps network administrators get a comprehensive status overview of all APs in an organization, quickly identifying any that are alerting, dormant, or offline.
 """
 
-
-
 import requests
 from datetime import datetime, timedelta
 
@@ -133,7 +131,7 @@ def main():
                 status_data = next((d for d in device_statuses if d.get('serial') == serial), {})
                 status = status_data.get('status', 'N/A')
 
-                # Count statuses
+                # Count statuses with case-insensitive comparison
                 if status.lower() == 'alerting':
                     alerting_count += 1
                 elif status.lower() == 'offline':
@@ -144,9 +142,9 @@ def main():
                 # Print the asterisk line for statuses that are not 'Online' or 'Dormant'
                 if status.lower() != 'online' and status.lower() != 'dormant':
                     print("*********************************************************************")
-                  
 
-                print(f"Name: {name}, Serial: {serial}, Model: {model}, Status: {status}")
+                # Display each AP status (in lowercase)
+                print(f"Name: {name}, Serial: {serial}, Model: {model}, Status: {status.lower()}")
             
             # Display the counts of each status
             print("\nStatus Counts:")
@@ -160,7 +158,7 @@ def main():
             offline_aps = [device for device in devices if any(d.get('status') == 'offline' for d in device_statuses if d.get('serial') == device['serial'])]
             for ap in offline_aps:
                 print(f"Name: {ap.get('name', 'N/A')}, Serial: {ap.get('serial', 'N/A')}, Model: {ap.get('model', 'N/A')}")
-            
+
             print(f"\nTotal Offline APs: {len(offline_aps)}")
             
             # Display timestamp
