@@ -15,3 +15,156 @@ Timestamp: Prints a timestamp at the end of the output to show when the report w
 This code helps network administrators get a comprehensive status overview of all APs in an organization, quickly identifying any that are alerting, dormant, or offline.
 """
 
+
+
+import requests
+from datetime import datetime, timedelta
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    print("Welcome to the access point status check.")
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        return organizations[0]['id']
+    
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    
+    org_choice = int(input("Please enter the number of your organization: "))
+    selected_org_id = organizations[org_choice - 1]['id']
+    return selected_org_id
+
+def get_devices(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/devices', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def get_device_statuses(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/devices/statuses', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def mark_dormant_devices(devices, device_statuses):
+    dormant_devices = []
+    for device in devices:
+        device_id = device['serial']
+        
+        # Find the corresponding device status by serial number
+        status_data = next((d for d in device_statuses if d.get('serial') == device_id), None)
+        
+        if status_data:
+            status = status_data.get('status', 'N/A')
+            last_reported_at = status_data.get('lastReportedAt', None)
+        else:
+            status = 'N/A'
+            last_reported_at = None
+        
+        # Define a time frame (in minutes) for considering devices as dormant
+        dormant_time_frame = 30  # Adjust this as needed
+        
+        if status != 'Active' and last_reported_at:
+            # Convert lastReportedAt to datetime
+            last_reported_at_datetime = datetime.strptime(last_reported_at, '%Y-%m-%dT%H:%M:%S.%fZ')
+            
+            # Calculate the time difference
+            time_difference = datetime.utcnow() - last_reported_at_datetime
+            
+            # Check if the device is dormant based on the time frame
+            if time_difference > timedelta(minutes=dormant_time_frame):
+                dormant_devices.append(device)
+    
+    return dormant_devices
+
+def main():
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+
+    if organizations:
+        selected_org_id = select_organization(organizations)
+        devices = get_devices(api_key, selected_org_id)
+        device_statuses = get_device_statuses(api_key, selected_org_id)
+
+        if devices:
+            dormant_devices = mark_dormant_devices(devices, device_statuses)
+            
+            # Initialize counters
+            alerting_count = 0
+            offline_count = 0
+            dormant_count = len(dormant_devices)  # Dormant count is based on dormant devices list
+            online_count = 0
+
+            # Process devices and count statuses
+            print("All Devices:")
+            sorted_devices = sorted(devices, key=lambda d: d.get('name', ''))
+            for device in sorted_devices:
+                name = device.get('name', 'N/A')
+                serial = device.get('serial', 'N/A')
+                model = device.get('model', 'N/A')
+                status_data = next((d for d in device_statuses if d.get('serial') == serial), {})
+                status = status_data.get('status', 'N/A')
+
+                # Count statuses
+                if status.lower() == 'alerting':
+                    alerting_count += 1
+                elif status.lower() == 'offline':
+                    offline_count += 1
+                elif status.lower() == 'online':
+                    online_count += 1
+                
+                # Print the asterisk line for statuses that are not 'Online' or 'Dormant'
+                if status.lower() != 'online' and status.lower() != 'dormant':
+                    print("*********************************************************************")
+                  
+
+                print(f"Name: {name}, Serial: {serial}, Model: {model}, Status: {status}")
+            
+            # Display the counts of each status
+            print("\nStatus Counts:")
+            print(f"Alerting: {alerting_count}")
+            print(f"Offline: {offline_count}")
+            print(f"Dormant: {dormant_count}")
+            print(f"Online: {online_count}")
+            
+            # Display offline APs
+            print("\nOffline Access Points:")
+            offline_aps = [device for device in devices if any(d.get('status') == 'offline' for d in device_statuses if d.get('serial') == device['serial'])]
+            for ap in offline_aps:
+                print(f"Name: {ap.get('name', 'N/A')}, Serial: {ap.get('serial', 'N/A')}, Model: {ap.get('model', 'N/A')}")
+            
+            print(f"\nTotal Offline APs: {len(offline_aps)}")
+            
+            # Display timestamp
+            print("\nReport generated on:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+if __name__ == "__main__":
+    main()
