@@ -1,0 +1,17 @@
+#Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
+"""
+/organizations
+/organizations/{organizationId}/devices
+/organizations/{organizationId}/devices/statuses
+
+Summary of What the Code Does:
+This code connects to Cisco Meraki's API to check the status of access points (APs) in a selected organization. 
+Device Data Retrieval: Pulls a list of devices and their statuses from the organization.
+Dormant Devices Identification: Marks devices as "dormant" if they haven’t reported in within a specified time frame.
+Device Status Display: Displays a list of all devices in alphabetical order by name, along with their statuses (e.g., alerting, offline, dormant, online).
+Status Counts: Counts and displays the number of APs in each status category (alerting, offline, dormant, online).
+Offline APs: Lists all offline APs separately and provides a count of these.
+Timestamp: Prints a timestamp at the end of the output to show when the report was generated.
+This code helps network administrators get a comprehensive status overview of all APs in an organization, quickly identifying any that are alerting, dormant, or offline.
+"""
+
