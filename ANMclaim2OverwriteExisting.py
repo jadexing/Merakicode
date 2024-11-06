@@ -1,4 +1,24 @@
-#! /usr/bin/env python
+"""
+This script performs several operations on Cisco Meraki devices, primarily related to device claiming and updating metadata for networks and devices. It uses the following Meraki API endpoints:
+
+GET /organizations: Retrieves a list of organizations the API key has access to (get_orgs function).
+GET /organizations/{organizationId}/networks: Retrieves all networks within a specified organization (get_networks function).
+POST /networks/{network_id}/devices/claim: Claims devices to a specific network based on serial numbers (claim_device function).
+PUT /devices/{serial}: Updates metadata for a specified device, such as the device name, tags, address, and notes (update_device function).
+GET /organizations/{organizationId}/configTemplates: Retrieves configuration templates for the specified organization (get_templates function).
+POST /networks/{networkId}/bind: Binds a network configuration template to a network (bind_template function).
+PUT /networks/{networkId}: Updates network metadata, specifically the network tags (update_network function).
+POST /organizations/{organizationId}/networks: Creates a new network in the specified organization (create_network function).
+
+What the Script Does
+Retrieve Organization and Network Data: It retrieves organizations and networks available to the API key and targets a specific organization..
+Create New Networks if Necessary: If a network specified in the CSV file doesn’t exist, it creates that network.
+Claim Devices: Claims devices to specific networks based on serial numbers provided in the CSV file.
+Update Network and Device Metadata: Adds metadata (e.g., tags, name, address, notes) to networks and devices.
+Apply Templates: Associates configuration templates to new networks if they are specified.
+
+"""
+
 '''Script to claim and add metadata to claimed devices'''
 import csv
 import json
@@ -13,7 +33,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 headers = {
     "Content-Type": "application/json",
     "Accept": "application/json",
-    "X-Cisco-Meraki-API-Key": 'Place API Key here'
+    "X-Cisco-Meraki-API-Key": 'Place API Key here, Place API Key here, Place API Key here, Place API key here.'
 }
 
 def get_orgs():
