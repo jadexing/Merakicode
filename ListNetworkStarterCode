@@ -1,0 +1,83 @@
+"""
+This code specifically displays networks in an org, alphabetically.
+It lets you select all networks, or just one.
+Twitter @jamiegprice #WiFi Cool Cats (blog) https://jamiegprice.substack.com/
+"""
+
+import requests
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+        return organizations[0]['id']
+    else:
+        org_idx = int(input("Enter the number of the organization: "))
+        return organizations[org_idx - 1]['id']
+
+def get_networks(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_networks(networks):
+    print("Networks:")
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks, 1):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+    print()
+
+def main():
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    if not organizations:
+        return
+    display_organizations(organizations)
+
+    selected_org_id = select_organization(organizations)
+
+    networks = get_networks(api_key, selected_org_id)
+    if not networks:
+        return
+    display_networks(networks)
+
+    # Prompt user to select one network or all networks
+    network_input = input("Enter the index number of the network or press Enter to select all networks: ")
+    if network_input == "":
+        print("All networks selected.")
+    else:
+        network_idx = int(network_input)
+        selected_network = networks[network_idx - 1]
+        print(f"Selected network: {selected_network['name']} (ID: {selected_network['id']})")
+
+if __name__ == "__main__":
+    main()
