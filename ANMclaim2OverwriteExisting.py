@@ -13,7 +13,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 headers = {
     "Content-Type": "application/json",
     "Accept": "application/json",
-    "X-Cisco-Meraki-API-Key": '84abfaa01dbde2e42b3ca3d187eb0db26e150586'
+    "X-Cisco-Meraki-API-Key": 'Place API Key here'
 }
 
 def get_orgs():
