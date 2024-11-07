@@ -1,3 +1,18 @@
+"""
+APIs Used:
+GET /organizations: Retrieves all organizations associated with the provided Meraki API key.
+GET /organizations/{organizationId}/networks: Fetches all networks under a specific organization.
+GET /networks/{networkId}/wireless/ssids/{ssidNumber}: Retrieves SSID data for a specific SSID within a network.
+Function Summary:
+This script allows the user to interact with the Meraki API to retrieve and display SSID data for selected networks 
+within a Meraki organization. The user is prompted to enter an API key, and the script then lists the available 
+organizations, networks, and SSIDs. It fetches SSID data for each network (either all networks or a selected one) 
+and includes SSIDs that are enabled or have an "Open" encryption mode. The retrieved data is written to a CSV file, 
+including network names, SSID names, and default VLAN IDs. The script also tracks and displays the time taken for 
+the process to complete.
+"""
+
+
 import requests
 import time
 import csv
