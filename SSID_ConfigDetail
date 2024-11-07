@@ -1,0 +1,174 @@
+import requests
+import time
+import csv
+from datetime import datetime
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+# Function to get the API key from the user
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+# Function to get all organizations
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers, timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+# Function to display the organizations
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+# Function to select an organization
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+        return organizations[0]['id']
+    else:
+        org_idx = int(input("Enter the number of the organization: "))
+        return organizations[org_idx - 1]['id']
+
+# Function to get networks from an organization
+def get_networks(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers, timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+# Function to display networks
+def display_networks(networks):
+    print("Networks:")
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks, 1):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+    print()
+    return sorted_networks
+
+# Function to get SSID data for a given SSID number
+def get_ssid_data(api_key, network_id, ssid_number, retries=3):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    url = BASE_URL + f'networks/{network_id}/wireless/ssids/{ssid_number}'
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.Timeout:
+            print(f"Request timed out for SSID {ssid_number}. Retrying... ({attempt + 1}/{retries})")
+            time.sleep(5)
+        except requests.exceptions.RequestException as e:
+            if response.status_code == 404:
+                pass  # Ignore 404 errors silently
+            else:
+                print(f"Error occurred during API call for SSID {ssid_number}: {e}")
+            break
+    return {}
+
+# Function to display SSID data
+def display_ssid_data(ssid_data):
+    if ssid_data and ssid_data.get('enabled'):
+        print(f"SSID Data: {ssid_data['name']}")
+        for key, value in ssid_data.items():
+            print(f"{key}: {value}")
+        print()
+
+# Function to write SSID data to a CSV file
+def write_to_csv(ssid_data_list):
+    if not ssid_data_list:
+        print("No data to write to CSV.")
+        return
+
+    # Reorder columns: Move network_name to the front, name as the second column, defaultVlanId as the third column
+    all_keys = set()
+    for data in ssid_data_list:
+        all_keys.update(data.keys())
+    
+    # Custom column order
+    fieldnames = ['network_name', 'name', 'defaultVlanId'] + [key for key in all_keys if key not in ['network_name', 'name', 'defaultVlanId']]
+
+    output_filename = f"ssid_data_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+
+    with open(output_filename, mode='w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        for data in ssid_data_list:
+            writer.writerow(data)
+    
+    print(f"Data has been written to {output_filename}")
+
+# Main function to handle the flow of the script
+def main():
+    start_time = time.time()  # Start time for job duration
+
+    print("Welcome to the Meraki SSID Data Script.")
+    
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    if not organizations:
+        return
+    display_organizations(organizations)
+
+    selected_org_id = select_organization(organizations)
+
+    networks = get_networks(api_key, selected_org_id)
+    if not networks:
+        return
+    sorted_networks = display_networks(networks)
+
+    network_input = input("Enter the index number of the network or press Enter to select all networks: ")
+    ssid_data_list = []
+    
+    if network_input == "":
+        print("All networks selected.")
+        for network in sorted_networks:
+            print(f"Fetching SSID data for network: {network['name']} (ID: {network['id']})")
+            for ssid_number in range(0, 16):  # Loop from 0 to 15 to capture all SSIDs
+                ssid_data = get_ssid_data(api_key, network['id'], ssid_number)
+                # Include SSIDs with "Open" encryption or enabled SSIDs
+                if ssid_data and ssid_data.get('enabled') and (ssid_data.get('encryptionMode') == "Open" or ssid_data.get('enabled')):
+                    display_ssid_data(ssid_data)
+                    # Add the network name to the data before appending
+                    ssid_data['network_name'] = network['name']
+                    ssid_data_list.append(ssid_data)
+    else:
+        network_idx = int(network_input)
+        selected_network = sorted_networks[network_idx - 1]
+        print(f"Fetching SSID data for selected network: {selected_network['name']} (ID: {selected_network['id']})")
+        for ssid_number in range(0, 16):  # Loop from 0 to 15 to capture all SSIDs
+            ssid_data = get_ssid_data(api_key, selected_network['id'], ssid_number)
+            # Include SSIDs with "Open" encryption or enabled SSIDs
+            if ssid_data and ssid_data.get('enabled') and (ssid_data.get('encryptionMode') == "Open" or ssid_data.get('enabled')):
+                display_ssid_data(ssid_data)
+                # Add the network name to the data before appending
+                ssid_data['network_name'] = selected_network['name']
+                ssid_data_list.append(ssid_data)
+    
+    write_to_csv(ssid_data_list)
+
+    # End time for job duration
+    end_time = time.time()
+    duration_seconds = end_time - start_time
+    duration_minutes = duration_seconds // 60
+    duration_hours = duration_minutes // 60
+    print(f"Job completed in {int(duration_hours)} hours, {int(duration_minutes % 60)} minutes, and {int(duration_seconds % 60)} seconds.")
+
+if __name__ == "__main__":
+    main()
