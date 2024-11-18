@@ -1,0 +1,148 @@
+import requests
+import time
+import pandas as pd
+from datetime import datetime
+
+# Function to retrieve a list of live clients from a specific network with pagination
+def get_live_clients(api_key, network_id):
+    url = f"https://api.meraki.com/api/v1/networks/{network_id}/clients"
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    params = {"perPage": 100}
+    clients_list = []
+
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            clients_data = response.json()
+            clients_list.extend(client for client in clients_data if client.get('status') == 'Online')
+            if 'next' in response.links:
+                url = response.links['next']['url']
+                time.sleep(0.5)  # Throttle the requests to avoid rate-limiting
+            else:
+                break
+        else:
+            print(f"Error: Unable to fetch clients for Network ID: {network_id}")
+            break
+
+    return clients_list
+
+# Function to retrieve a list of unique clients from a specific network with pagination
+def get_unique_clients(api_key, network_id, start_date, end_date):
+    start_timestamp = int(datetime.strptime(start_date, '%m-%d-%Y').timestamp())
+    end_timestamp = int(datetime.strptime(end_date, '%m-%d-%Y').timestamp())
+    
+    url = f"https://api.meraki.com/api/v1/networks/{network_id}/clients"
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    params = {"perPage": 100, "timespan": end_timestamp - start_timestamp}
+    
+    clients_list = []
+
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            clients_data = response.json()
+            clients_list.extend(client['mac'] for client in clients_data)
+            if 'next' in response.links:
+                url = response.links['next']['url']
+                time.sleep(0.5)  # Throttle the requests to avoid rate-limiting
+            else:
+                break
+        else:
+            print(f"Error: Unable to fetch unique clients for Network ID: {network_id}")
+            break
+
+    return list(set(clients_list))  # Remove duplicates
+
+# Meraki API Key input
+api_key = input("Enter your Meraki API key: ")
+
+# Retrieve the organization list
+url = "https://api.meraki.com/api/v1/organizations"
+headers = {"X-Cisco-Meraki-API-Key": api_key}
+response = requests.get(url, headers=headers)
+
+if response.status_code == 200:
+    organizations_data = response.json()
+    if len(organizations_data) == 1:
+        # Auto-select the organization if only one exists
+        org_number = organizations_data[0]['id']
+        print(f"Only one organization found. Auto-selecting: {organizations_data[0]['name']}")
+    else:
+        # Prompt user to select organization
+        print("\nOrganizations associated with the API:")
+        for index, org in enumerate(organizations_data, start=1):
+            print(f"{index}. {org['name']} (Organization ID: {org['id']})")
+        
+        while True:
+            try:
+                org_choice = int(input("\nEnter the number of the organization you want to use: "))
+                if 1 <= org_choice <= len(organizations_data):
+                    org_number = organizations_data[org_choice - 1]['id']
+                    break
+                else:
+                    print("Invalid input. Please enter a valid number.")
+            except ValueError:
+                print("Invalid input. Please enter a valid number.")
+
+else:
+    print("Unable to fetch organizations. Please check your API key.")
+    exit()
+
+# Retrieve and display the networks associated with the organization
+url = f"https://api.meraki.com/api/v1/organizations/{org_number}/networks"
+response = requests.get(url, headers=headers)
+
+if response.status_code == 200:
+    networks_data = response.json()
+    print("\nNetworks associated with the organization:")
+    for index, network in enumerate(networks_data, start=1):
+        print(f"{index}. {network['name']} (Network ID: {network['id']})")
+
+    # Ask user for start and stop date
+    start_date = input("\nEnter the start date (mm-dd-yyyy): ")
+    end_date = input("Enter the end date (mm-dd-yyyy): ")
+
+    # Ask user to select the network for live and unique client counts
+    while True:
+        try:
+            selected_network = int(input("\nEnter the number of the network you want to see the unique client counts for (or 0 for all networks): "))
+            if 0 <= selected_network <= len(networks_data):
+                break
+            else:
+                print("Invalid input. Please enter a valid number.")
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
+
+    print("\nPlease wait while gathering data...")
+
+    # Retrieve unique client counts for the selected network(s)
+    unique_clients_per_network = {}
+    total_unique_clients = 0
+
+    if selected_network == 0:
+        for network in networks_data:
+            network_id = network['id']
+            network_name = network['name']
+            unique_clients = get_unique_clients(api_key, network_id, start_date, end_date)
+            unique_clients_per_network[network_name] = len(unique_clients)
+            total_unique_clients += len(unique_clients)
+            print(f"{network_name}: Unique Clients from {start_date} to {end_date} - {len(unique_clients)}")
+
+    else:
+        network_id = networks_data[selected_network - 1]['id']
+        network_name = networks_data[selected_network - 1]['name']
+        unique_clients = get_unique_clients(api_key, network_id, start_date, end_date)
+        unique_clients_per_network[network_name] = len(unique_clients)
+        total_unique_clients += len(unique_clients)
+        print(f"{network_name}: Unique Clients from {start_date} to {end_date} - {len(unique_clients)}")
+
+    # Display total unique client counts
+    print("\nTotal Unique Clients from", start_date, "to", end_date, ":", total_unique_clients)
+
+    # Save data to a spreadsheet
+    df = pd.DataFrame(list(unique_clients_per_network.items()), columns=['Network', 'Unique Clients Count'])
+    df.to_excel("meraki_unique_client_counts.xlsx", index=False)
+    print("\nData saved to 'meraki_unique_client_counts.xlsx'")
+
+else:
+    print("Unable to fetch networks. Please check your API key and organization number.")
