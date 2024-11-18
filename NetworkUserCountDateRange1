@@ -1,3 +1,19 @@
+"""
+/organizations/{organizationId}/networks
+Step 1: User enters their Meraki API key.
+Step 2: If only one organization exists, it is selected automatically. Otherwise, the user chooses one from the list.
+Step 3: The user is asked whether to process all networks or just one.
+Step 4: The user enters a start and end date to define the range for which to fetch unique client data.
+Step 5: The script fetches the unique client data for the selected networks and date range.
+Step 6: The script displays the number of unique clients per network.
+Step 7: The total number of unique clients is displayed.
+Step 8: All this data is saved into an Excel file.
+
+This created a new file. The file name is simply: meraki_unique_client_counts.xlsx
+
+Twitter @jamiegprice https://jamiegprice.substack.com/ CWNE #510
+"""
+
 import requests
 import time
 import pandas as pd
