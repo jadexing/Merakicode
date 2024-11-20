@@ -1,4 +1,25 @@
 #Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
+"""
+This script is designed to interact with the Meraki API to fetch and display latency statistics for wireless clients within a selected network over a specified time span. Here's a breakdown of what it does:
+
+Get API Key: It prompts the user to enter their Meraki API key.
+Get Organizations: It makes an API call to retrieve a list of organizations associated with the provided API key.
+Display Organizations: It prints the list of organizations to the screen.
+Select Organization: It prompts the user to select an organization from the list.
+Get Networks: It makes another API call to retrieve a list of networks within the selected organization.
+Display Networks: It prints the list of networks to the screen.
+Select Network: It prompts the user to select a network from the list.
+Specify Time Span: It prompts the user to enter the time span in days for which they want to fetch latency statistics.
+Get Latency Stats: It makes an API call to retrieve latency statistics for the selected network within the specified time span.
+Save Data to CSV: It saves the latency statistics data into a CSV file with the current date and time in the filename.
+Display API Calls: It prints the Meraki GET statements that were performed during the script execution.
+The API endpoints it uses are:
+
+Organizations API: https://api.meraki.com/api/v1/organizations
+Networks API: https://api.meraki.com/api/v1/organizations/{org_id}/networks
+Latency Stats API: https://api.meraki.com/api/v1/networks/{network_id}/wireless/clients/latencyStats
+The script captures latency statistics for wireless clients within the selected network and saves this data into a CSV file for further analysis.
+"""
 
 import requests
 from datetime import datetime, timedelta
