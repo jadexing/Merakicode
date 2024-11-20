@@ -1,6 +1,19 @@
 #General Meraki Live AP and detail data dump to screen and spreadsheet.
 ###Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
+"""
+This code is designed to interact with the Meraki API to retrieve and display information about devices within an organization. Here's a breakdown of what it does:
 
+Get API Key: It prompts the user to enter their Meraki API key.
+Get Organizations: It makes an API call to retrieve a list of organizations associated with the provided API key.
+Select Organization: If there is more than one organization, it prompts the user to select one.
+Get Devices: It makes another API call to retrieve a list of devices within the selected organization.
+Display Devices: It prints the details of each device (name, serial number, and model) to the screen.
+Export to Spreadsheet: It exports the device data to an Excel spreadsheet named meraki_devices.xlsx.
+The APIs it pulls from are:
+
+Organizations API: https://api.meraki.com/api/v1/organizations
+Devices API: https://api.meraki.com/api/v1/organizations/{org_id}/devices
+"""
 
 import requests
 import csv
