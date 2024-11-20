@@ -1,6 +1,19 @@
 #Code runs this API: /organizations/{organizationId}/devices/statuses
 #Full Org data dump on Inventory - IP addresses, tags and other.
 # Twitter: @jamiegprice https://jamiegprice.substack.com/
+"""
+This code is designed to interact with the Meraki API to retrieve and display the statuses of devices within an organization. Here's a breakdown of what it does:
+
+Get API Key: It prompts the user to enter their Meraki API key.
+Get Organizations: It makes an API call to retrieve a list of organizations associated with the provided API key.
+Display Organizations: It prints the list of organizations to the screen.
+Select Organization: If there is more than one organization, it prompts the user to select one.
+Get Device Statuses: It makes another API call to retrieve the statuses of devices within the selected organization.
+Display Device Statuses: It prints detailed information about each device, including name, serial number, MAC address, public IP, network ID, status, last reported time, LAN IP, gateway, IP type, primary and secondary DNS, product type, power supply details (if available), model, and tags.
+The API it pulls from is:
+
+Device Statuses API: https://api.meraki.com/api/v1/organizations/{organizationId}/devices/statuses
+"""
 
 import requests
 
