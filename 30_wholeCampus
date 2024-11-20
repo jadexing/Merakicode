@@ -1,5 +1,23 @@
+"""
+This script is designed to interact with the Meraki API to retrieve and aggregate client counts per access point (AP) for networks within an organization. Here's a breakdown of what it does:
+
+Get API Key: The API key is hardcoded in the script, so it runs without prompting the user.
+Get Organizations: It makes an API call to retrieve a list of organizations associated with the provided API key.
+Get Networks: It makes another API call to retrieve a list of networks within the selected organization.
+Get Clients per AP: For each network, it retrieves the list of devices and then makes another API call to get the client count for each AP (access point) in the last 5 minutes.
+Aggregate Data: It stores the client counts in a global dictionary, aggregated_data, and checks if any AP has a client count of 30 or more.
+Create Excel File: It creates an Excel file using openpyxl and populates it with the aggregated data, including network name, time, AP name, and client count.
+Save Excel File: It saves the Excel file with a unique name based on the current date and time.
+The APIs it pulls from are:
+
+Organizations API: https://api.meraki.com/api/v1/organizations
+Networks API: https://api.meraki.com/api/v1/organizations/{org_id}/networks
+Devices API: https://api.meraki.com/api/v1/networks/{network_id}/devices
+Clients API: https://api.meraki.com/api/v1/devices/{device_serial}/clients?timespan=300
+
 #With your API key placed in this script, it will run without prompting.
 #Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/
+"""
 
 
 import requests
