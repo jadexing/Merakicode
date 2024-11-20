@@ -1,3 +1,24 @@
+"""
+This code is designed to interact with the Meraki API to retrieve and display Air Marshal data for SSIDs seen within a network, and then save this data into separate spreadsheets for each network if all networks are chosen. Here's a breakdown of what it does:
+
+Get API Key: It prompts the user to enter their Meraki API key.
+Get Organizations: It makes an API call to retrieve a list of organizations associated with the provided API key.
+Display Organizations: It prints the list of organizations to the screen.
+Select Organization: It prompts the user to select an organization from the list.
+Get Networks: It makes another API call to retrieve a list of networks within the selected organization.
+Display Networks: It prints the list of networks to the screen, sorted alphabetically by their names.
+Select Network: It prompts the user to select a network or all networks.
+Get Air Marshal Data: For each selected network, it retrieves the Air Marshal data, which includes information about SSIDs, BSSIDs, channels, first seen, last seen, wired MACs, wired VLANs, wired last seen, RSSI, and type.
+Display Air Marshal Data: It prints the Air Marshal data to the screen in a formatted manner.
+Save Data to CSV: It saves the Air Marshal data into a CSV file for each network.
+Calculate Job Duration: It calculates and prints the duration of the job in minutes.
+The APIs it pulls from are:
+
+Organizations API: https://api.meraki.com/api/v1/organizations
+Networks API: https://api.meraki.com/api/v1/organizations/{org_id}/networks
+Air Marshal API: https://api.meraki.com/api/v1/networks/{network_id}/wireless/airMarshal
+"""
+
 # API  https://developer.cisco.com/meraki/api-v1/get-network-wireless-air-marshal/
 # Code asks for your API key and lets you select a network or all for SSIDs seen (Air Marshal Data).
 # This will create a separate spreadsheep for each Network if all Networks are chosen.
