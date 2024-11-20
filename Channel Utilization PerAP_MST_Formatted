@@ -1,3 +1,24 @@
+This script is designed to interact with the Meraki API to pull channel utilization data for specified access points (APs) within a network. It converts the data to Mountain Standard Time (MST) and formats it nicely into an Excel spreadsheet. Here's a breakdown of what it does:
+
+Get API Key: It prompts the user to enter their Meraki API key.
+Get Organizations: It makes an API call to retrieve a list of organizations associated with the provided API key.
+Display Organizations: It prints the list of organizations to the screen.
+Select Organization: It prompts the user to select an organization from the list.
+Get Networks: It makes another API call to retrieve a list of networks within the selected organization.
+Display Networks: It prints the list of networks to the screen, sorted alphabetically by their names.
+Select Network: It prompts the user to select a network from the list.
+Get Access Points: For the selected network, it retrieves the list of devices and filters out the access points (APs).
+Display Access Points: It prints the details of each access point (name and serial number) to the screen, sorted alphabetically by their names.
+Select APs: It prompts the user to select the APs to run the utilization API against.
+Get Channel Utilization: For each selected AP, it retrieves the channel utilization data.
+Save Data to Excel: It saves the channel utilization data into an Excel spreadsheet using pandas.
+Convert UTC to MST: It converts the timestamps from UTC to Mountain Standard Time (MST).
+Process and Reformat Data: It processes and reformats the saved Excel file to organize the data.
+Calculate Job Duration: It calculates and prints the duration of the job in minutes and seconds.
+
+Therefore, these timestamps cover a total of 23 hours and 50 minutes.
+"""
+
 #Script pulls data per requested AP. It puts in in MST time, and nicely formats the data.
 #Channel Utilization- API networks/{network_id}/networkHealth/channelUtilization
 #https://jamiegprice.substack.com/about #CWNE 510
