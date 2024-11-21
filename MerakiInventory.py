@@ -1,3 +1,26 @@
+"""
+This code is designed to interact with the Meraki API to gather information about the networks and access points (APs) in an organization. Here's a detailed breakdown of what each part of the code does:
+
+Prompt for API Key: The get_api_key function prompts the user to enter their Meraki API key.
+
+Fetch Organizations: The get_org_number function fetches the list of organizations associated with the API key. If there's only one organization, it automatically selects it. Otherwise, it prompts the user to select an organization from the list.
+
+Fetch Networks: The get_networks function retrieves the list of networks for the selected organization and sorts them by name.
+
+Fetch AP Inventory: The get_ap_inventory function fetches the inventory of devices for a specific network and counts the number of access points (APs) based on their model (starting with "MR" or "CW").
+
+Main Function: The main function orchestrates the entire process:
+
+It records the start time.
+It gets the API key and organization ID.
+It fetches the list of networks.
+For each network, it retrieves the AP inventory and compiles the data into a list.
+It creates a DataFrame from the compiled data and adds a total row for each column.
+It exports the data to an Excel spreadsheet with a timestamped filename.
+It calculates and prints the duration of the job.
+In summary, this code collects and organizes data about Meraki networks and their access points, then saves the information to an Excel file.
+"""
+
 #Jamieinbox - Wi-Fi Cool Cats https://jamiegprice.substack.com/ CWNE #510
 
 import requests
