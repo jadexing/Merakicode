@@ -1,5 +1,0 @@
-#This is a companion script to "Channel Utlization." This script takes the, "Channel Utilization" UTC Data file and converts it to MST/Denver time.
-Channel Utilization- API networks/{network_id}/networkHealth/channelUtilization
-# @jamieinbox https://jamiegprice.substack.com/
-
-#Working on fixing
