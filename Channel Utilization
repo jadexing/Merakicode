@@ -1,192 +1,139 @@
-#Channel Utilization- API networks/{network_id}/networkHealth/channelUtilization
-#This code brings up your networks, lets you select the network, and displays utilization statistics for that network, per AP- into a spreadsheet.
-#https://jamiegprice.substack.com/ Twitter @jamiegprice
+"""
+Workflow
+Start the Script:
+Run the script and provide your Meraki API key.
+Select Organization:
+If multiple organizations exist, pick one from the list.
+Select Network:
+Choose the network from an alphabetically sorted list.
+Data Retrieval:
+The script fetches channel utilization data for all APs in the network in batches.
+Displays each batch of records in the terminal as they are retrieved.
+Excel Output:
+Data is saved to an Excel file named ChannelUtilization_{network_name}_{timestamp}.xlsx with AP Name as the first column.
+"""
 
 import requests
-import datetime
 import pandas as pd
-import time  # For managing delays between requests
+import time
+from datetime import datetime
 
 BASE_URL = 'https://api.meraki.com/api/v1/'
+
 
 def get_api_key():
     return input("Enter your Meraki API key: ")
 
+
 def get_organizations(api_key):
     headers = {'X-Cisco-Meraki-API-Key': api_key}
-    try:
-        response = requests.get(BASE_URL + 'organizations', headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error occurred during API call: {e}")
-        return []
+    response = requests.get(BASE_URL + 'organizations', headers=headers)
+    response.raise_for_status()
+    return response.json()
 
-def display_organizations(organizations):
-    print("Organizations:")
-    for idx, org in enumerate(organizations, 1):
-        print(f"{idx}. {org['name']} (ID: {org['id']})")
-    print()
 
 def select_organization(organizations):
     if len(organizations) == 1:
-        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+        print(f"Auto-selecting organization: {organizations[0]['name']}")
         return organizations[0]['id']
     else:
+        print("Organizations:")
+        for idx, org in enumerate(organizations, 1):
+            print(f"{idx}. {org['name']}")
         while True:
             try:
-                org_idx = int(input("Enter the number of the organization: ")) - 1
-                if 0 <= org_idx < len(organizations):
-                    return organizations[org_idx]['id']
-                else:
-                    print("Invalid choice, please try again.")
+                selection = int(input("Select an organization: ")) - 1
+                if 0 <= selection < len(organizations):
+                    return organizations[selection]['id']
             except ValueError:
-                print("Invalid input, please enter a number.")
+                print("Invalid input. Please try again.")
+
 
 def get_networks(api_key, org_id):
     headers = {'X-Cisco-Meraki-API-Key': api_key}
-    try:
-        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
-        response.raise_for_status()
-        networks = response.json()
-        networks.sort(key=lambda x: x['name'])  # Sort networks alphabetically
-        return networks
-    except requests.exceptions.RequestException as e:
-        print(f"Error occurred during API call: {e}")
-        return []
+    response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+    response.raise_for_status()
+    networks = response.json()
+    return sorted(networks, key=lambda x: x['name'])
 
-def display_networks(networks):
-    print("Networks:")
-    for idx, network in enumerate(networks, 1):
-        print(f"{idx}. {network['name']} (ID: {network['id']})")
-    print()
 
 def select_network(networks):
+    print("Networks:")
+    for idx, network in enumerate(networks, 1):
+        print(f"{idx}. {network['name']}")
     while True:
-        choice = input("Enter the number of the network to select (or 'q' to quit): ")
-        if choice.lower() == 'q':
-            return None
         try:
-            net_idx = int(choice) - 1
-            if 0 <= net_idx < len(networks):
-                return networks[net_idx]['id']
-            else:
-                print("Invalid choice, please try again.")
+            selection = int(input("Select a network: ")) - 1
+            if 0 <= selection < len(networks):
+                return networks[selection]['id'], networks[selection]['name']
         except ValueError:
-            print("Invalid input, please enter a number.")
+            print("Invalid input. Please try again.")
 
-def get_access_points(api_key, network_id):
-    headers = {'X-Cisco-Meraki-API-Key': api_key}
-    all_access_points = []
-    url = BASE_URL + f'networks/{network_id}/devices'
-    
-    while url:
-        try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            access_points = response.json()
-            
-            if isinstance(access_points, list):
-                print(f"Fetched {len(access_points)} access points from {url}")
-                all_access_points.extend(access_points)
-                
-                # No pagination for this endpoint; exit loop
-                break
-            
-            else:
-                print(f"Unexpected response format: {access_points}")
-                break
 
-        except requests.exceptions.RequestException as e:
-            print(f"Error occurred during API call: {e}")
-            break
-    
-    return all_access_points
-
-def get_channel_utilization(api_key, network_id, ap_serial):
+def get_channel_utilization(api_key, network_id):
     headers = {'X-Cisco-Meraki-API-Key': api_key}
     url = BASE_URL + f'networks/{network_id}/networkHealth/channelUtilization'
     all_data = []
-    
-    try:
-        response = requests.get(url, headers=headers, params={'serial': ap_serial})
+    params = {'perPage': 10}  # Batch size
+    print("Fetching channel utilization data. This may take time, please wait...")
+    while True:
+        response = requests.get(url, headers=headers, params=params)
         response.raise_for_status()
-        data = response.json()
-        
-        if isinstance(data, list):
-            print(f"Fetched {len(data)} data entries for AP {ap_serial}")
-            all_data.extend(data)
+        batch = response.json()
+        all_data.extend(batch)
+
+        # Display records for the current batch
+        print(f"Retrieved {len(batch)} records:")
+        for record in batch:
+            print(record)
+
+        if 'next' in response.links:  # Check for pagination
+            params['startingAfter'] = response.links['next']['url'].split('startingAfter=')[1]
+            time.sleep(2)  # Pause to avoid rate limits
         else:
-            print(f"Unexpected response format for AP {ap_serial}: {data}")
-        
-    except requests.exceptions.RequestException as e:
-        print(f"Error occurred during API call for AP {ap_serial}: {e}")
-        if e.response is not None:
-            print(f"Response content: {e.response.content}")
-    
+            break
     return all_data
 
-def save_to_excel(data, filename):
+
+def save_to_excel(data, network_name):
+    filename = f"ChannelUtilization_{network_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     df = pd.DataFrame(data)
-    if 'AP Name' not in df.columns:
-        df['AP Name'] = 'Unknown AP'  # Ensure 'AP Name' column exists
-    df = df[['AP Name'] + [col for col in df.columns if col != 'AP Name']]  # Reorder columns to make AP Name first
     df.to_excel(filename, index=False)
     print(f"Data saved to {filename}")
 
+
 def main():
-    start_time = datetime.datetime.now()
+    try:
+        api_key = get_api_key()
+        organizations = get_organizations(api_key)
+        if not organizations:
+            print("No organizations found. Exiting.")
+            return
 
-    api_key = get_api_key()
-    organizations = get_organizations(api_key)
-    if not organizations:
-        return
-    display_organizations(organizations)
+        org_id = select_organization(organizations)
+        networks = get_networks(api_key, org_id)
+        if not networks:
+            print("No networks found. Exiting.")
+            return
 
-    selected_org_id = select_organization(organizations)
+        network_id, network_name = select_network(networks)
+        print("Working on gathering data. Depending on the size of the network, this could take time.")
 
-    networks = get_networks(api_key, selected_org_id)
-    if not networks:
-        return
-    display_networks(networks)
+        start_time = time.time()
+        data = get_channel_utilization(api_key, network_id)
+        end_time = time.time()
 
-    selected_network_id = select_network(networks)
-    if not selected_network_id:
-        print("No network selected, exiting.")
-        return
+        if not data:
+            print("No data found for the selected network.")
+        else:
+            print(f"\nData retrieval completed in {end_time - start_time:.2f} seconds.")
+            save_to_excel(data, network_name)
 
-    # Fetch AP details for the selected network
-    access_points = get_access_points(api_key, selected_network_id)
-    if not access_points:
-        print("No access points found, exiting.")
-        return
-    
-    # Fetch channel utilization data for each AP
-    channel_utilization_data = []
-    for ap in access_points:
-        ap_serial = ap['serial']
-        ap_name = ap.get('name', 'Unknown AP')
-        utilization_data = get_channel_utilization(api_key, selected_network_id, ap_serial)
-        
-        # Add AP name to the utilization data
-        for entry in utilization_data:
-            entry['AP Name'] = ap_name
-            channel_utilization_data.append(entry)
-        
-        # To avoid hitting rate limits, wait a bit before making the next request
-        time.sleep(1)
+    except requests.exceptions.RequestException as e:
+        print(f"API Error: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
-    if not channel_utilization_data:
-        print("No channel utilization data retrieved.")
-        return
-
-    end_time = datetime.datetime.now()
-    timestamp = end_time.strftime("%Y%m%d_%H%M%S")
-    filename = f"channel_utilization_{timestamp}.xlsx"
-    save_to_excel(channel_utilization_data, filename)
-
-    duration_minutes = (end_time - start_time).total_seconds() / 60
-    print(f"Job completed in {duration_minutes:.2f} minutes.")
 
 if __name__ == "__main__":
     main()
