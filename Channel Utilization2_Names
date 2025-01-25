@@ -1,0 +1,152 @@
+"""
+How It Works:
+The script first fetches the list of organizations and selects one.
+It then fetches the networks for the selected organization and presents them to the user.
+After the user selects a network, the script retrieves the list of devices (APs) in that network using GET /networks/{networkId}/devices.
+The script fetches the channel utilization data using GET /networks/{networkId}/networkHealth/channelUtilization.
+The AP name (from the devices list) is added to the first column based on the serial number of the AP from the channel utilization data.
+The final data is saved into the file TempCoolCats2.xlsx.
+This will match the serial numbers from the channel utilization data with the AP names and add the AP name to the first column.
+"""
+
+
+import requests
+import pandas as pd
+import time
+from datetime import datetime
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    response = requests.get(BASE_URL + 'organizations', headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Auto-selecting organization: {organizations[0]['name']}")
+        return organizations[0]['id']
+    else:
+        print("Organizations:")
+        for idx, org in enumerate(organizations, 1):
+            print(f"{idx}. {org['name']}")
+        while True:
+            try:
+                selection = int(input("Select an organization: ")) - 1
+                if 0 <= selection < len(organizations):
+                    return organizations[selection]['id']
+            except ValueError:
+                print("Invalid input. Please try again.")
+
+def get_networks(api_key, org_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+    response.raise_for_status()
+    networks = response.json()
+    return sorted(networks, key=lambda x: x['name'])
+
+def select_network(networks):
+    print("Networks:")
+    for idx, network in enumerate(networks, 1):
+        print(f"{idx}. {network['name']}")
+    while True:
+        try:
+            selection = int(input("Select a network: ")) - 1
+            if 0 <= selection < len(networks):
+                return networks[selection]['id'], networks[selection]['name']
+        except ValueError:
+            print("Invalid input. Please try again.")
+
+def get_devices(api_key, network_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    response = requests.get(BASE_URL + f'networks/{network_id}/devices', headers=headers)
+    response.raise_for_status()
+    devices = response.json()
+    # Debug: Print the API response for devices
+    print("\nResponse from GET /networks/{networkId}/devices:")
+    for device in devices:
+        print(device)
+    return devices
+
+def get_channel_utilization(api_key, network_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    url = BASE_URL + f'networks/{network_id}/networkHealth/channelUtilization'
+    all_data = []
+    params = {'perPage': 10}  # Batch size
+    print("Fetching channel utilization data. This may take time, please wait...")
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        batch = response.json()
+        all_data.extend(batch)
+
+        # Display records for the current batch
+        print(f"Retrieved {len(batch)} records:")
+        for record in batch:
+            print(record)
+
+        if 'next' in response.links:  # Check for pagination
+            params['startingAfter'] = response.links['next']['url'].split('startingAfter=')[1]
+            time.sleep(2)  # Pause to avoid rate limits
+        else:
+            break
+    return all_data
+
+def save_to_excel(data, network_name, devices):
+    filename = "TempCoolCats2.xlsx"
+    df = pd.DataFrame(data)
+    
+    # Create a dictionary for serial number to AP name mapping
+    serial_to_ap_name = {device['serial']: device['name'] for device in devices}
+
+    # Add the AP name from the serial number mapping to the first column
+    df['AP Name'] = df['serial'].map(serial_to_ap_name)
+
+    # Rearrange the columns to place 'AP Name' at the front
+    df = df[['AP Name'] + [col for col in df.columns if col != 'AP Name']]
+    
+    df.to_excel(filename, index=False)
+    print(f"Data saved to {filename}")
+
+def main():
+    try:
+        api_key = get_api_key()
+        organizations = get_organizations(api_key)
+        if not organizations:
+            print("No organizations found. Exiting.")
+            return
+
+        org_id = select_organization(organizations)
+        networks = get_networks(api_key, org_id)
+        if not networks:
+            print("No networks found. Exiting.")
+            return
+
+        network_id, network_name = select_network(networks)
+        print("Working on gathering data. Depending on the size of the network, this could take time.")
+
+        # Step 1: Get devices data
+        devices = get_devices(api_key, network_id)
+
+        # Step 2: Get channel utilization data
+        start_time = time.time()
+        data = get_channel_utilization(api_key, network_id)
+        end_time = time.time()
+
+        if not data:
+            print("No data found for the selected network.")
+        else:
+            print(f"\nData retrieval completed in {end_time - start_time:.2f} seconds.")
+            save_to_excel(data, network_name, devices)
+
+    except requests.exceptions.RequestException as e:
+        print(f"API Error: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
