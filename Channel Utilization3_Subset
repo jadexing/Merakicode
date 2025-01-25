@@ -1,0 +1,167 @@
+import requests
+import pandas as pd
+from datetime import datetime
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    return input("Enter your Meraki API key: ")
+
+def get_organizations(api_key):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    response = requests.get(BASE_URL + 'organizations', headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Auto-selecting organization: {organizations[0]['name']}")
+        return organizations[0]['id']
+    else:
+        print("Organizations:")
+        for idx, org in enumerate(organizations, 1):
+            print(f"{idx}. {org['name']}")
+        while True:
+            try:
+                selection = int(input("Select an organization: ")) - 1
+                if 0 <= selection < len(organizations):
+                    return organizations[selection]['id']
+            except ValueError:
+                print("Invalid input. Please try again.")
+
+def get_networks(api_key, org_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+    response.raise_for_status()
+    networks = response.json()
+    return sorted(networks, key=lambda x: x['name'])
+
+def select_network(networks):
+    print("Networks:")
+    for idx, network in enumerate(networks, 1):
+        print(f"{idx}. {network['name']}")
+    while True:
+        try:
+            selection = int(input("Select a network: ")) - 1
+            if 0 <= selection < len(networks):
+                return networks[selection]['id'], networks[selection]['name']
+        except ValueError:
+            print("Invalid input. Please try again.")
+
+def get_devices(api_key, network_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    response = requests.get(BASE_URL + f'networks/{network_id}/devices', headers=headers)
+    response.raise_for_status()
+    devices = response.json()
+    return sorted(devices, key=lambda x: x['name'])  # Sort devices alphabetically
+
+def get_channel_utilization(api_key, network_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    url = BASE_URL + f'networks/{network_id}/networkHealth/channelUtilization'
+    all_data = []
+    params = {'perPage': 10}  # Batch size
+    print("Fetching channel utilization data. This may take time, please wait...")
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        batch = response.json()
+        all_data.extend(batch)
+
+        # Display records for the current batch
+        print(f"Retrieved {len(batch)} records:")
+        for record in batch:
+            print(record)
+
+        if 'next' in response.links:  # Check for pagination
+            params['startingAfter'] = response.links['next']['url'].split('startingAfter=')[1]
+        else:
+            break
+    return all_data
+
+def save_to_excel(data, filename):
+    df = pd.DataFrame(data)
+    df.to_excel(filename, index=False)
+    print(f"Data saved to {filename}")
+
+def filter_ap_data(df, selected_aps):
+    # Filter the dataframe to include only rows where the 'name' is in the selected APs
+    return df[df['name'].isin(selected_aps)]
+
+def main():
+    try:
+        api_key = get_api_key()
+        organizations = get_organizations(api_key)
+        if not organizations:
+            print("No organizations found. Exiting.")
+            return
+
+        org_id = select_organization(organizations)
+        networks = get_networks(api_key, org_id)
+        if not networks:
+            print("No networks found. Exiting.")
+            return
+
+        network_id, network_name = select_network(networks)
+        print("Working on gathering data. Depending on the size of the network, this could take time.")
+
+        devices = get_devices(api_key, network_id)
+        utilization_data = get_channel_utilization(api_key, network_id)
+
+        # Matching serial numbers from TempCoolCats1 with APs
+        df_utilization = pd.DataFrame(utilization_data)
+        df_devices = pd.DataFrame(devices)
+
+        # Print columns to inspect
+        print("Data columns in channel utilization response:")
+        print(df_utilization.columns)
+
+        # Assuming TempCoolCats1.xlsx is the file from which we match
+        temp_file_df = pd.read_excel("TempCoolCats1.xlsx")
+
+        # Merge data based on serial number
+        merged_df = pd.merge(df_utilization, df_devices[['serial', 'name']], left_on='serial', right_on='serial', how='left')
+        
+        # Now selecting the correct columns, using 'wifi0', 'wifi1' as the utilization data
+        # Adjust the columns based on the available ones in the response
+        merged_df = merged_df[['name', 'serial', 'wifi0', 'wifi1']]  # Change wifi0, wifi1 as per requirement
+
+        # Save to TempCoolCats2
+        save_to_excel(merged_df, "TempCoolCats2.xlsx")
+
+        # Read TempCoolCats2 and sort the AP names alphabetically
+        df_temp_cool_cats2 = pd.read_excel("TempCoolCats2.xlsx")
+        sorted_ap_names = df_temp_cool_cats2['name'].sort_values().tolist()  # Sort APs alphabetically
+
+        print("\nAvailable Access Points (APs) in alphabetical order:")
+        for idx, ap in enumerate(sorted_ap_names, 1):
+            print(f"{idx}. {ap}")
+
+        selection = input("\nSelect an AP (by index), a set of APs (comma-separated), or a range (e.g., 1-5): ")
+
+        selected_aps = []
+        if ',' in selection:
+            selected_aps = selection.split(',')
+        elif '-' in selection:
+            start, end = map(int, selection.split('-'))
+            selected_aps = list(range(start, end + 1))
+        else:
+            selected_aps = [int(selection)]
+
+        # Convert selected_aps indices to AP names
+        selected_ap_names = [sorted_ap_names[ap_index - 1] for ap_index in selected_aps]
+
+        # Filter and display selected AP data
+        filtered_data = filter_ap_data(df_temp_cool_cats2, selected_ap_names)
+        print("\nSelected AP Data:")
+        print(filtered_data)
+
+        # Save the filtered data to a new file
+        save_to_excel(filtered_data, "TempCoolCats3.xlsx")
+
+    except requests.exceptions.RequestException as e:
+        print(f"API Error: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
