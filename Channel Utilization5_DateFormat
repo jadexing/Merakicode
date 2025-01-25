@@ -1,0 +1,53 @@
+import pandas as pd
+import pytz
+from datetime import datetime
+
+# List of U.S. Timezones
+us_timezones = [
+    "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
+    "US/Atlantic", "US/Samoa", "US/Arizona", "US/East-Indiana"
+]
+
+# Function to convert UTC to the selected timezone with Daylight Saving Time (DST) handling
+def convert_utc_to_timezone(utc_time_str, timezone_str):
+    utc_time = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%SZ")
+    utc_time = pytz.utc.localize(utc_time)  # Localize to UTC
+    local_time = utc_time.astimezone(pytz.timezone(timezone_str))  # Convert to target timezone
+    return local_time.strftime('%A, %B %d, %Y %I:%M %p')  # Format as "Day, Month Date, Year Time AM/PM"
+
+# Load the TempCoolCats4 Excel file
+input_file = 'TempCoolCats4.xlsx'
+output_file = 'TempCoolCats5.xlsx'
+
+# Read the data
+df = pd.read_excel(input_file)
+
+# Display all available U.S. Timezones with indices
+print("Available U.S. Timezones:")
+for idx, tz in enumerate(us_timezones, 1):
+    print(f"{idx}. {tz}")
+
+# Ask the client for the timezone they would like to convert to
+timezone_choice = int(input("\nPlease select the timezone (1-10): "))
+selected_timezone = us_timezones[timezone_choice - 1]
+
+# Convert all UTC timestamps in the dataframe
+df['Start Time'] = df['Start Time'].apply(lambda x: convert_utc_to_timezone(str(x), selected_timezone) if pd.notna(x) else x)
+df['End Time'] = df['End Time'].apply(lambda x: convert_utc_to_timezone(str(x), selected_timezone) if pd.notna(x) else x)
+
+# Display the very first and very last Start Time and End Time
+first_start_time = df['Start Time'].iloc[0] if pd.notna(df['Start Time'].iloc[0]) else "No valid start time"
+last_start_time = df['Start Time'].iloc[-1] if pd.notna(df['Start Time'].iloc[-1]) else "No valid start time"
+first_end_time = df['End Time'].iloc[0] if pd.notna(df['End Time'].iloc[0]) else "No valid end time"
+last_end_time = df['End Time'].iloc[-1] if pd.notna(df['End Time'].iloc[-1]) else "No valid end time"
+
+# Print the Time Range
+print(f"\n\nTime Range\n***")
+print(f"First Start Time: {first_start_time}")
+print(f"To")
+print(f"Last End Time: {last_end_time}")
+
+# Save the updated data to TempCoolCats5.xlsx
+df.to_excel(output_file, index=False)
+
+print(f"\nThe data has been saved to {output_file} with times converted to {selected_timezone}.")
