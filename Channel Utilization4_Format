@@ -1,0 +1,55 @@
+import pandas as pd
+import ast
+
+# Load the Excel file
+input_file = 'TempCoolCats3.xlsx'
+output_file = 'TempCoolCats4.xlsx'
+
+# Read the data from the input Excel file
+df = pd.read_excel(input_file)
+
+# Function to parse the wifi1 data and repeat AP name for each entry
+def parse_wifi_data(wifi_data, ap_name):
+    # Handle if the wifi_data is empty or malformed
+    if wifi_data in [None, '[]', '']:
+        return []
+    
+    # Convert string representation of list to an actual list
+    try:
+        wifi_list = ast.literal_eval(wifi_data)
+    except:
+        return []
+    
+    # Extract data from each dictionary in the list
+    parsed_data = []
+    for wifi in wifi_list:
+        parsed_data.append([
+            ap_name,
+            wifi.get("utilization", None),
+            wifi.get("wifi", None),
+            wifi.get("non_wifi", None),
+            wifi.get("start_ts", None),
+            wifi.get("end_ts", None)
+        ])
+    
+    return parsed_data
+
+# List to store all parsed rows
+expanded_rows = []
+
+# Loop through each row in the dataframe
+for _, row in df.iterrows():
+    ap_name = row['name']
+    wifi_data = row['wifi1']
+    
+    # Parse wifi1 data and get the expanded rows
+    parsed_rows = parse_wifi_data(wifi_data, ap_name)
+    expanded_rows.extend(parsed_rows)
+
+# Create a new DataFrame with the expanded rows
+expanded_df = pd.DataFrame(expanded_rows, columns=['AP Name', 'Wifi Utilization', 'Wifi Wifi', 'Wifi Non Wifi', 'Start Time', 'End Time'])
+
+# Save the new DataFrame to the output Excel file
+expanded_df.to_excel(output_file, index=False)
+
+print(f"Formatted data has been saved to {output_file}.")
