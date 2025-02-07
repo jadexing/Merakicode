@@ -1,16 +1,4 @@
 """
-This code is designed to interact with the Meraki API to gather information about the networks and access points (APs) in an organization. Here's a detailed breakdown of what each part of the code does:
-
-Prompt for API Key: The get_api_key function prompts the user to enter their Meraki API key.
-
-Fetch Organizations: The get_org_number function fetches the list of organizations associated with the API key. If there's only one organization, it automatically selects it. Otherwise, it prompts the user to select an organization from the list.
-
-Fetch Networks: The get_networks function retrieves the list of networks for the selected organization and sorts them by name.
-
-Fetch AP Inventory: The get_ap_inventory function fetches the inventory of devices for a specific network and counts the number of access points (APs) based on their model (starting with "MR" or "CW").
-
-Main Function: The main function orchestrates the entire process:
-
 It records the start time.
 It gets the API key and organization ID.
 It fetches the list of networks.
@@ -45,6 +33,7 @@ def get_org_number(api_key):
         print(f"Automatically selecting organization: {org_list[0]['name']}")
         return org_list[0]['id']
     
+    org_list.sort(key=lambda x: x["name"])  # Sort organizations alphabetically
     print("Organizations:")
     for i, org in enumerate(org_list):
         print(f"{i + 1}. {org['name']}")
@@ -59,7 +48,7 @@ def get_org_number(api_key):
         except ValueError:
             print("Invalid input. Please enter a valid organization number.")
 
-# Function to fetch the list of networks for a specific organization
+# Function to fetch and return a sorted list of networks for a specific organization
 def get_networks(api_key, org_id):
     url = f"https://api.meraki.com/api/v1/organizations/{org_id}/networks"
     headers = {"X-Cisco-Meraki-API-Key": api_key}
@@ -79,7 +68,7 @@ def get_ap_inventory(api_key, network_id):
     
     inventory = response.json()
     ap_types = {}
-    
+
     for device in inventory:
         ap_model = device["model"]
         if ap_model.startswith("MR") or ap_model.startswith("CW"):
@@ -106,29 +95,27 @@ def main():
         network_name = network["name"]
         network_id = network["id"]
         ap_inventory = get_ap_inventory(api_key, network_id)
-        ap_inventory["Total"] = sum(ap_inventory.values())  # Add total for each row
+        ap_inventory["Total"] = sum(ap_inventory.values())  # Add total per row
         data.append({"Network Name": network_name, **ap_inventory})
-    
+
     df = pd.DataFrame(data)
-    
-    # Add a row for the total of each column
-    df.loc['Total'] = df.sum(numeric_only=True, axis=0)
-    
-    # Rename the "MR" column to "Total"
-    df = df.rename(columns={"MR": "Total"})
-    
-    # Move the "Total" column to the right end of the DataFrame
-    columns = list(df.columns)
-    columns.remove("Total")
-    df = df[columns + ["Total"]]
-    
+
+    # Ensure columns are sorted alphabetically, except "Network Name" and "Total"
+    column_order = ["Network Name"] + sorted([col for col in df.columns if col not in ["Network Name", "Total"]]) + ["Total"]
+    df = df[column_order]
+
+    # Add a total row at the end
+    total_row = df.sum(numeric_only=True, axis=0).to_dict()
+    total_row["Network Name"] = "Total"
+    df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+
     # Export the data to an Excel spreadsheet
     output_file = f"meraki_ap_inventory_{start_time.strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
     df.to_excel(output_file, index=False, engine='openpyxl')
-    
+
     end_time = datetime.datetime.now()
     duration_minutes = (end_time - start_time).total_seconds() / 60.0
-    
+
     print(f"Data has been collected and saved to '{output_file}'.")
     print(f"Job completed in {duration_minutes:.2f} minutes.")
 
