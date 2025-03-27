@@ -1,0 +1,277 @@
+#https://jamiegprice.substack.com/ CWNE #510 with Gemini
+
+"""
+The code uses the Cisco Meraki API to interact with Meraki's cloud-managed network devices. Here are the specific API endpoints used in the code:
+
+Organizations API:
+
+Endpoint: https://api.meraki.com/api/v1/organizations
+Purpose: Retrieves a list of organizations associated with the provided API key.
+Networks API:
+
+Endpoint: https://api.meraki.com/api/v1/organizations/{org_id}/networks
+Purpose: Retrieves a list of networks for the specified organization.
+Wireless Connection Stats API:
+
+Endpoint: https://api.meraki.com/api/v1/networks/{network_id}/wireless/connectionStats
+Purpose: Retrieves wireless connection statistics for the specified network and time range.
+These APIs are used to gather information about organizations and networks, and to fetch wireless connection statistics, which are then displayed in the terminal and written to an Excel spreadsheet.
+"""
+
+import requests
+from datetime import datetime, timedelta, timezone
+import openpyxl
+import pytz
+import sys
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    try:
+        api_key = input("Enter your Meraki API key: ")
+        return api_key
+    except EOFError:
+        print("Error: No API key provided.")
+        sys.exit(1)
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+        return organizations[0]['id']
+    else:
+        try:
+            org_idx = int(input("Enter the number of the organization: "))
+            return organizations[org_idx - 1]['id']
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            sys.exit(1)
+        except IndexError:
+            print("Invalid organization number.")
+            sys.exit(1)
+
+def get_networks(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_networks(networks):
+    print("Networks:")
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks, 1):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+    print()
+    return sorted_networks
+
+def get_wireless_connection_stats(api_key, network_id, t0, t1):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+
+    params = {
+        't0': t0,
+        't1': t1,
+    }
+
+    try:
+        response = requests.get(BASE_URL + f'networks/{network_id}/wireless/connectionStats', headers=headers, params=params)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return None
+
+def write_to_spreadsheet(all_network_data, t0_mst, t1_mst, filename="meraki_wireless_stats.xlsx"):
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+
+    sheet.cell(row=1, column=1, value="Network connection stats")
+    sheet.cell(row=1, column=2, value=f"Start (MST): {t0_mst}")
+    sheet.cell(row=1, column=3, value=f"Stop (MST): {t1_mst}")
+
+    row_num = 2
+    first_network = True
+
+    for network_name, network_data in all_network_data.items():
+        if isinstance(network_data, list) and len(network_data) > 0:
+            headers = list(network_data[0].keys())
+            if first_network:
+                sheet.cell(row=row_num, column=1, value="Network Name")
+                for col_num, header in enumerate(headers, 2):
+                    sheet.cell(row=row_num, column=col_num, value=header)
+                row_num += 1
+                first_network = False
+
+            for row_data in network_data:
+                sheet.cell(row=row_num, column=1, value=network_name)
+                for col_num, header in enumerate(headers, 2):
+                    sheet.cell(row=row_num, column=col_num, value=row_data.get(header))
+                row_num += 1
+
+        elif isinstance(network_data, dict):
+            if first_network:
+                sheet.cell(row=row_num, column=1, value="Network Name")
+                for col_num, header in enumerate(list(network_data.keys()), 2):
+                    sheet.cell(row=row_num, column=col_num, value=header)
+                row_num += 1
+                first_network = False
+
+            sheet.cell(row=row_num, column=1, value=network_name)
+            for col_num, value in enumerate(list(network_data.values()), 2):
+                sheet.cell(row=row_num, column=col_num, value=value)
+            row_num += 1
+        else:
+            sheet.cell(row=row_num, column=1, value=network_name)
+            sheet.cell(row=row_num, column=2, value=str(network_data))
+            row_num += 1
+    workbook.save(filename)
+    print(f"Data written to {filename}")
+
+def display_stats_terminal(network_name, stats, t0_mst, t1_mst):
+    print(f"\n--- Wireless Connection Stats for {network_name} ---")
+    print(f"Time Range (MST): Start={t0_mst}, Stop={t1_mst}")
+    if isinstance(stats, list) and len(stats) > 0:
+        for stat in stats:
+            if isinstance(stat, dict):
+                for key, value in stat.items():
+                    print(f"{key}: {value}")
+            else:
+                print(stat)
+            print("-" * 20)
+    elif isinstance(stats, dict):
+        for key, value in stats.items():
+            print(f"{key}: {value}")
+    else:
+        print(stats)
+
+def main():
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    if not organizations:
+        return
+    display_organizations(organizations)
+
+    selected_org_id = select_organization(organizations)
+
+    networks = get_networks(api_key, selected_org_id)
+    if not networks:
+        return
+    sorted_networks = display_networks(networks)
+
+    # Prompt the user for start and stop dates with detailed instructions
+    while True:
+        try:
+            days_input = input("What start and stop dates would you like? "
+                               "Please use the format YYYY-MM-DD HH:MM:SS YYYY-MM-DD HH:MM:SS (MST) "
+                               "For example: 2025-03-20 10:00:00 2025-03-27 17:00:00: ")
+            start_date_str, start_time_str, stop_date_str, stop_time_str = days_input.split()
+
+            start_datetime_str = f"{start_date_str} {start_time_str}"
+            stop_datetime_str = f"{stop_date_str} {stop_time_str}"
+
+            start_datetime = datetime.strptime(start_datetime_str, "%Y-%m-%d %H:%M:%S")
+            stop_datetime = datetime.strptime(stop_datetime_str, "%Y-%m-%d %H:%M:%S")
+
+            if stop_datetime <= start_datetime:
+                print("Error: Stop date/time must be after start date/time.")
+                continue
+
+            # Calculate the time difference
+            time_difference = stop_datetime - start_datetime
+
+            # Check if the time difference exceeds 31 days
+            if time_difference > timedelta(days=31):
+                print("Error: Date/time range cannot exceed 31 days.")
+                continue
+
+            break  # Exit the loop if input is valid
+        except ValueError:
+            print("Invalid date/time format. Please use YYYY-MM-DD HH:MM:SS (MST).")
+        except:
+            print("An unexpected error occurred with date/time input.")
+            sys.exit(1)
+
+    # Calculate t0 and t1 from user-provided dates/times
+    utc_tz = timezone.utc
+    mst_tz = pytz.timezone('US/Mountain')
+
+    start_datetime_utc = start_datetime.replace(tzinfo=mst_tz).astimezone(utc_tz)
+    stop_datetime_utc = stop_datetime.replace(tzinfo=mst_tz).astimezone(utc_tz)
+
+    t0 = start_datetime_utc.isoformat().replace('+00:00', 'Z')
+    t1 = stop_datetime_utc.isoformat().replace('+00:00', 'Z')
+
+    t0_mst = start_datetime_utc.astimezone(mst_tz).strftime("%Y-%m-%d %H:%M:%S")
+    t1_mst = stop_datetime_utc.astimezone(mst_tz).strftime("%Y-%m-%d %H:%M:%S")
+
+    network_input = input("Enter the index number of the network or press Enter to select all networks: ")
+
+    all_network_data = {}
+
+    # Generate filename with timestamp
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
+    filename = f"meraki_wireless_stats_{timestamp}.xlsx"
+
+    if network_input == "":
+        print("All networks selected.")
+        for network in sorted_networks:
+            print(f"\n--- Network: {network['name']} (ID: {network['id']}) ---")
+            stats = get_wireless_connection_stats(api_key, network['id'], t0, t1)
+            if stats:
+                all_network_data[network['name']] = stats
+                display_stats_terminal(network['name'], stats, t0_mst, t1_mst)
+            else:
+                print("No data retrieved for network.")
+    else:
+        try:
+            # Check if network_input is a valid integer
+            if network_input.isdigit():
+                network_idx = int(network_input)
+                selected_network = sorted_networks[network_idx - 1]
+                print(f"Selected network: {selected_network['name']} (ID: {selected_network['id']})")
+                stats = get_wireless_connection_stats(api_key, selected_network['id'], t0, t1)
+                if stats:
+                    all_network_data[selected_network['name']] = stats
+                    display_stats_terminal(selected_network['name'], stats, t0_mst, t1_mst)
+                else:
+                    print("No data retrieved for network.")
+            else:
+                print("Invalid input. Please enter a number.")
+                sys.exit(1)
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            sys.exit(1)
+        except IndexError:
+            print("Invalid network number.")
+            sys.exit(1)
+
+    if all_network_data:
+        write_to_spreadsheet(all_network_data, t0_mst, t1_mst, filename)  # Use the generated filename
+
+if __name__ == "__main__":
+    main()
