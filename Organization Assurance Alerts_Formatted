@@ -1,0 +1,226 @@
+"""
+CWNE #510 
+https://jamiegprice.substack.com/
+
+Organizations Endpoint: This endpoint is used to retrieve a list of organizations associated with the provided API key.
+
+URL: https://api.meraki.com/api/v1/organizations
+Alerts Endpoint: This endpoint is used to retrieve assurance alerts for a specific organization.
+
+URL: https://api.meraki.com/api/v1/organizations/{org_id}/assurance/alerts
+
+"""
+
+import requests
+from datetime import datetime, timezone
+import openpyxl
+import sys
+import pytz  # For timezone handling
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    try:
+        api_key = input("Enter your Meraki API key: ")
+        return api_key
+    except EOFError:
+        print("Error: No API key provided.")
+        sys.exit(1)
+
+def get_organizations(api_key):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_organizations(organizations):
+    print("Organizations:")
+    for idx, org in enumerate(organizations, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+def select_organization(organizations):
+    if len(organizations) == 1:
+        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
+        return organizations[0]['id']
+    else:
+        try:
+            org_idx = int(input("Enter the number of the organization: "))
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            sys.exit(1)
+        except IndexError:
+            print("Invalid organization number.")
+        return organizations[org_idx - 1]['id']
+
+def get_networks(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def display_networks(networks):
+    print("Networks:")
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks, 1):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+    print()
+    return sorted_networks
+
+def get_wireless_connection_stats(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def get_alerts(api_key, org_id):
+    headers = {
+        'X-Cisco-Meraki-API-Key': api_key,
+    }
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/assurance/alerts', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error occurred during API call: {e}")
+        return []
+
+def write_to_spreadsheet(alerts, filename="meraki_alerts.xlsx"):
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+
+    # Write the title and timestamp in the first row
+    now_utc = datetime.utcnow().replace(tzinfo=timezone.utc)
+    mst_tz = pytz.timezone('US/Mountain')  # Define MST timezone
+    timestamp_mst = now_utc.astimezone(mst_tz).strftime("%Y%m%d_%H%M%S")
+    sheet.cell(row=1, column=1, value="Meraki Alerts")
+    sheet.cell(row=1, column=2, value=f"Timestamp (MST): {timestamp_mst}")
+
+    row_num = 2
+    if alerts:
+        # Process the alerts to extract the values we want
+        processed_alerts = []
+        for alert in alerts:
+            row_data = {}
+
+            # Extract basic alert information
+            device_names = []
+            
+            scope = alert.get('scope', {})
+            devices = scope.get('devices', [])
+            
+            if devices:
+                for device in devices:
+                    device_names.append(device.get('name', 'N/A'))
+            
+            device_names_str = ", ".join(device_names)  # Join names for display
+
+            row_data['device_names'] = device_names_str
+            row_data['title'] = alert.get('title', 'N/A')
+            row_data['description'] = alert.get('description', 'N/A')
+            row_data['severity'] = alert.get('severity', 'N/A')
+            
+            # Convert startedAt to MST
+            started_at_utc_str = alert.get('startedAt', 'N/A')
+            try:
+                started_at_utc = datetime.fromisoformat(started_at_utc_str.replace('Z', '+00:00'))
+                started_at_mst = started_at_utc.astimezone(mst_tz).strftime("%Y-%m-%d %H:%M:%S")
+                row_data['startedAt'] = started_at_mst
+            except:
+                row_data['startedAt'] = 'N/A'  # Handle potential errors in conversion
+
+            row_data['id'] = alert.get('id', 'N/A')
+            row_data['categoryType'] = alert.get('categoryType', 'N/A')
+            row_data['type'] = alert.get('type', 'N/A')
+            row_data['resolvedAt'] = alert.get('resolvedAt', 'N/A')
+            row_data['dismissedAt'] = alert.get('dismissedAt', 'N/A')
+
+            # Extract network information
+            network = alert.get('network', {})
+            row_data['network_id'] = network.get('id', 'N/A')
+            row_data['network_name'] = network.get('name', 'N/A')
+
+            processed_alerts.append(row_data)
+
+        # Write the processed data to the spreadsheet
+        headers = list(processed_alerts[0].keys())
+
+        # Define the new header order
+        new_headers = ["device_names", "title", "description", "severity", "startedAt"]
+        # Add the rest of the headers
+        for header in headers:
+            if header not in new_headers:
+                new_headers.append(header)
+        sheet.append(new_headers)
+
+        for alert in processed_alerts:
+            row = []
+
+            # Add the data in the desired order
+            row.append(alert.get('device_names', 'N/A'))
+            row.append(alert.get('title', 'N/A'))
+            row.append(alert.get('description', 'N/A'))
+            row.append(alert.get('severity', 'N/A'))
+            row.append(alert.get('startedAt', 'N/A'))  # Use the MST startedAt
+
+            # Add the rest of the data
+            for header in headers:
+                if header not in ["device_names", "title", "description", "severity", "startedAt"]:
+                    row.append(alert.get(header))
+            sheet.append(row)
+    else:
+        sheet.cell(row=row_num, column=1, value="No alerts found.")
+
+    workbook.save(filename)
+    print(f"Data written to {filename}")
+
+def main():
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    if not organizations:
+        return
+
+    display_organizations(organizations)
+
+    if len(organizations) == 1:
+        selected_org_id = organizations[0]['id']
+        print(f"Only one organization found. Auto-selecting: {organizations[0]['name']}")
+    else:
+        selected_org_id = select_organization(organizations)
+
+    # Print the message about MST timestamps
+    print("Timestamps are displayed in MST.")
+
+    alerts = get_alerts(api_key, selected_org_id)
+
+    # Generate filename with timestamp
+    now_utc = datetime.utcnow().replace(tzinfo=timezone.utc)
+    mst_tz = pytz.timezone('US/Mountain')  # Define MST timezone
+    timestamp_mst = now_utc.astimezone(mst_tz).strftime("%Y%m%d_%H%M%S")
+    filename = f"meraki_alerts_{timestamp_mst}.xlsx"
+
+    if alerts:
+        write_to_spreadsheet(alerts, filename)
+    else:
+        print("No alerts to write to spreadsheet.")
+
+if __name__ == "__main__":
+    main()
