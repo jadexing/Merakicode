@@ -1,0 +1,114 @@
+"""
+Took code from here: https://developer.cisco.com/codeexchange/github/repo/shantarsecurity/meraki-bssid-dump/
+Added that it will have a timestamp on how long it takes to run. "My" file has more data columns.
+Props to: shantarsecurity.
+
+--> Grabs all the BSSIDs and dumps them into a file.
+"""
+
+
+
+import meraki
+import time
+import datetime
+import os
+import logging
+
+# Configure basic logging (optional)
+logging.basicConfig(level=logging.INFO, filename='meraki_script.log')  # Log to file
+
+def main():
+    start_time = time.time()  # Start the timer
+
+    # Your Meraki API key
+    api_key = 'd843530b71299e40fbc0d3004bb96437b2ad8b13'  # Replace with your actual API key!
+
+    # Create dashboard object
+    dash = meraki.DashboardAPI(api_key, suppress_logging=True)
+
+    # Generate filename with timestamp (outside the loop)
+    now = datetime.datetime.now()
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
+    filename = f"meraki_bssid_data_{timestamp}.csv"
+
+    try:
+        # Loop through orgs
+        for org in dash.organizations.getOrganizations():
+            org_id = org['id']
+            org_name = org['name']
+            logging.info(f"Processing organization: {org_name} (ID: {org_id})")
+            print(f"Processing organization: {org_name} (ID: {org_id})")
+
+            # Loop through nets
+            for net in dash.organizations.getOrganizationNetworks(org_id):
+                net_id = net['id']
+                net_name = net['name']
+                logging.info(f"  Processing network: {net_name} (ID: {net_id})")
+                print(f"  Processing network: {net_name} (ID: {net_id})")
+
+                # Loop through devices
+                for device in dash.networks.getNetworkDevices(net_id):
+                    device_serial = device['serial']
+                    device_name = device.get('name', 'N/A')  # Handle potential missing device name
+                    device_model = device.get('model', 'N/A')  # Handle potential missing device model
+                    logging.info(f"    Processing device: {device_name} (Serial: {device_serial}, Model: {device_model})")
+                    print(f"    Processing device: {device_name} (Serial: {device_serial}, Model: {device_model})")
+
+                    # Check if device is an AP
+                    if 'MR' in device_model or 'CW' in device_model:
+                        logging.info(f"      Device is an AP. Retrieving wireless status.")
+                        print(f"      Device is an AP. Retrieving wireless status.")
+                        try:
+                            status = dash.wireless.getDeviceWirelessStatus(device_serial)
+                            # Loop through all sets
+                            for set in status.get('basicServiceSets', []):
+                                # Only report on enabled
+                                if set.get('enabled'):
+                                    bssid = set.get('bssid', 'N/A')  # Handle potential missing bssid
+                                    ssid_name = set.get('ssidName', 'N/A')  # Handle potential missing ssidName
+                                    band = set.get('band', 'N/A')  # Handle potential missing band
+                                    logging.info(f"        Processing BSSID: {bssid} (SSID: {ssid_name}, Band: {band})")
+                                    print(f"        Processing BSSID: {bssid} (SSID: {ssid_name}, Band: {band})")
+                                    
+                                    # Ensure all values are converted to strings
+                                    data_list = [
+                                        str(org_name),
+                                        str(org_id),
+                                        str(net_name),
+                                        str(net_id),
+                                        str(device_name),
+                                        str(device_serial),
+                                        str(device_model),
+                                        str(bssid),
+                                        str(ssid_name),
+                                        str(band)
+                                    ]
+
+                                    # Write to file (outside the innermost loop)
+                                    with open(filename, 'a', encoding='utf-8') as file:
+                                        file.write(f"{','.join(data_list)}\n")
+                        except Exception as e:
+                            logging.error(f"      Error retrieving wireless status for device {device_serial}: {e}", exc_info=True)
+                            print(f"      Error retrieving wireless status for device {device_serial}: {e}")
+                    else:
+                        logging.info(f"      Device is not an AP. Skipping.")
+                        print(f"      Device is not an AP. Skipping.")
+
+        print("Processing completed.")
+
+    except Exception as e:
+        logging.critical(f"An unexpected error occurred: {e}", exc_info=True)  # Log the full exception
+        print(f"An unexpected error occurred: {e}")
+
+    end_time = time.time()  # End the timer
+    elapsed_time = end_time - start_time
+
+    # Format the elapsed time
+    time_delta = datetime.timedelta(seconds=elapsed_time)
+    formatted_time = str(time_delta)
+
+    print(f"\nTotal script execution time: {formatted_time}")
+
+
+if __name__ == "__main__":
+    main()
