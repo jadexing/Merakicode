@@ -1,17 +1,8 @@
 """
 This code is designed to interact with the Meraki API to retrieve and display information about access points (APs) within an organization, and then save this data into a spreadsheet. Here's a breakdown of what it does:
 
-Get API Key: It prompts the user to enter their Meraki API key.
-Get Organizations: It makes an API call to retrieve a list of organizations associated with the provided API key.
-Display Organizations: It prints the list of organizations to the screen.
-Select Organization: It prompts the user to select an organization from the list.
-Get Networks: It makes another API call to retrieve a list of networks within the selected organization.
-Display Networks: It prints the list of networks to the screen.
-Get Access Points: For each network, it retrieves the list of devices and filters out the access points (APs).
-Display Access Points: It prints the details of each access point (name and serial number) to the screen.
-Save Data to Spreadsheet: It saves the access point data into an Excel spreadsheet using pandas.
-Calculate Job Duration: It calculates and prints the duration of the job.
-The APIs it pulls from are:
+Colums displayed are:
+lat long address	serial	mac	lanIp	tags	url	networkId	name	details	beaconIdParams	model	firmware	floorPlanId	notes
 
 Organizations API: https://api.meraki.com/api/v1/organizations
 Networks API: https://api.meraki.com/api/v1/organizations/{org_id}/networks
