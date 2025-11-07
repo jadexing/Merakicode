@@ -1,0 +1,187 @@
+"""
+This script lists all networks in your Meraki organization alphabetically,
+retrieves all floor plans in the org (by network), and then lets you choose to save all
+floor plans or just a subset.
+
+Author: Jamie G. Price (@jamiegprice)
+Blog: https://jamiegprice.substack.com/
+"""
+
+import os
+import requests
+from PIL import Image
+from io import BytesIO
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+# ----------------------------
+# 1️⃣  Prompt for API key
+# ----------------------------
+def get_api_key():
+    return input("Enter your Meraki API key: ").strip()
+
+# ----------------------------
+# 2️⃣  Get organizations
+# ----------------------------
+def get_organizations(api_key):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error retrieving organizations: {e}")
+        return []
+
+# ----------------------------
+# 3️⃣  Select organization
+# ----------------------------
+def select_organization(organizations):
+    if len(organizations) == 1:
+        org = organizations[0]
+        print(f"\n✅ Only one organization found: {org['name']} (ID: {org['id']})")
+        return org['id']
+    else:
+        print("\nOrganizations:")
+        for i, org in enumerate(organizations, start=1):
+            print(f"{i}. {org['name']} (ID: {org['id']})")
+        choice = int(input("\nEnter the number of the organization: "))
+        return organizations[choice - 1]['id']
+
+# ----------------------------
+# 4️⃣  Get networks
+# ----------------------------
+def get_networks(api_key, org_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    try:
+        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error retrieving networks: {e}")
+        return []
+
+# ----------------------------
+# 5️⃣  Display networks
+# ----------------------------
+def display_networks(networks):
+    print("\nAvailable Networks:")
+    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
+    for idx, network in enumerate(sorted_networks, 1):
+        print(f"{idx}. {network['name']} (ID: {network['id']})")
+    return sorted_networks
+
+# ----------------------------
+# 6️⃣  Get floor plans for a network
+# ----------------------------
+def get_floorplans(api_key, network_id):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    try:
+        response = requests.get(BASE_URL + f'networks/{network_id}/floorPlans', headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error retrieving floor plans for network {network_id}: {e}")
+        return []
+
+# ----------------------------
+# 7️⃣  Choose networks and aggregate floor plans
+# ----------------------------
+def choose_networks_and_get_floorplans(api_key, networks):
+    print("\nDo you want floor plans for a specific network or all networks?")
+    print("1. Specific network")
+    print("2. All networks")
+    choice = input("Enter choice (1 or 2): ").strip()
+
+    selected_floorplans = []
+
+    if choice == '1':
+        sorted_networks = display_networks(networks)
+        net_choice = int(input("\nEnter the number of the network: "))
+        network_id = sorted_networks[net_choice - 1]['id']
+        fps = get_floorplans(api_key, network_id)
+        if fps:
+            selected_floorplans.extend(fps)
+    elif choice == '2':
+        for network in networks:
+            fps = get_floorplans(api_key, network['id'])
+            if fps:
+                selected_floorplans.extend(fps)
+    else:
+        print("Invalid choice. Exiting.")
+        return []
+
+    if not selected_floorplans:
+        print("⚠️ No floor plans found for the selected network(s).")
+    return selected_floorplans
+
+# ----------------------------
+# 8️⃣  Display floor plans and allow selection
+# ----------------------------
+def display_floorplans(floorplans):
+    print("\n🏢 Available Floor Plans:")
+    for idx, plan in enumerate(floorplans, 1):
+        print(f"{idx}. {plan.get('name', 'Unnamed Floor')}")
+
+    selection = input("\nEnter the numbers of the floor plans to save (comma-separated), or press Enter to save ALL: ").strip()
+
+    if not selection:
+        return floorplans  # Save all
+    else:
+        selected_indices = [int(x.strip()) - 1 for x in selection.split(',') if x.strip().isdigit()]
+        return [floorplans[i] for i in selected_indices if 0 <= i < len(floorplans)]
+
+# ----------------------------
+# 9️⃣  Download floor plan images
+# ----------------------------
+def download_floorplan_images(api_key, floorplans):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    os.makedirs('FloorPlans', exist_ok=True)
+
+    for plan in floorplans:
+        image_url = plan.get('imageUrl')
+        name = plan.get('name', 'UnnamedFloor').replace(' ', '_')
+        if image_url:
+            try:
+                img_response = requests.get(image_url, headers=headers)
+                img_response.raise_for_status()
+                img = Image.open(BytesIO(img_response.content))
+                file_path = os.path.join('FloorPlans', f"{name}.png")
+                img.save(file_path)
+                print(f"✅ Saved floor plan: {file_path}")
+            except Exception as e:
+                print(f"⚠️ Error saving image for {name}: {e}")
+        else:
+            print(f"⚠️ No image URL for {name}")
+
+# ----------------------------
+# 🔟 Main function
+# ----------------------------
+def main():
+    api_key = get_api_key()
+    organizations = get_organizations(api_key)
+    if not organizations:
+        print("No organizations found.")
+        return
+
+    org_id = select_organization(organizations)
+    networks = get_networks(api_key, org_id)
+    if not networks:
+        print("No networks found in this organization.")
+        return
+
+    print("\n📡 Fetching floor plans...")
+    all_floorplans = choose_networks_and_get_floorplans(api_key, networks)
+    if not all_floorplans:
+        return
+
+    selected_floorplans = display_floorplans(all_floorplans)
+    if selected_floorplans:
+        print(f"\n💾 Downloading {len(selected_floorplans)} floor plan(s)...")
+        download_floorplan_images(api_key, selected_floorplans)
+        print("\n🎯 Job completed successfully!")
+    else:
+        print("No floor plans selected.")
+
+if __name__ == "__main__":
+    main()
