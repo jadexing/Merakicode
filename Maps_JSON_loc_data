@@ -1,0 +1,141 @@
+"""
+✅ Basic Use of the Script
+
+Prompts you for your Meraki API key.
+Retrieves all organizations linked to that key.
+Lets you select an organization (or auto-selects if only one).
+Calls the AutoLocate Devices endpoint to get device location details.
+Prints device info (name, serial, MAC, model, status, coordinates, tags).
+Saves the full data to a timestamped JSON file for later use.
+
+List Organizations
+GET https://api.meraki.com/api/v1/organizations
+
+Get AutoLocate Devices
+GET https://api.meraki.com/api/v1/organizations/{organizationId}/floorPlans/autoLocate/devices
+
+{organizationId} = the ID of the organization you selected.
+Returns device details including:
+
+Name, Serial, MAC, Model
+Status (online/offline)
+Floor plan info
+Latitude/Longitude and AutoLocate coordinates
+Tags and anchor status
+
+"""
+
+import requests
+import json
+from datetime import datetime
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def main():
+    # 1️⃣ Prompt for API key
+    api_key = input("Enter your Meraki API key: ").strip()
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+
+    # 2️⃣ Get organizations
+    try:
+        response = requests.get(BASE_URL + 'organizations', headers=headers)
+        response.raise_for_status()
+        orgs = response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error retrieving organizations: {e}")
+        return
+
+    if not orgs:
+        print("❌ No organizations found for this API key.")
+        return
+
+    # 3️⃣ Auto-select organization if only one
+    if len(orgs) == 1:
+        org_id = orgs[0]['id']
+        print(f"✅ Only one organization found: {orgs[0]['name']} (ID: {org_id})")
+    else:
+        print("Organizations found:")
+        for i, org in enumerate(orgs, start=1):
+            print(f"{i}. {org['name']} (ID: {org['id']})")
+        try:
+            choice = int(input("Select an organization by number: "))
+            org_id = orgs[choice - 1]['id']
+        except (ValueError, IndexError):
+            print("Invalid selection. Exiting.")
+            return
+
+    # 4️⃣ Call autoLocate devices endpoint
+    url = BASE_URL + f'organizations/{org_id}/floorPlans/autoLocate/devices'
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        try:
+            data = response.json()
+        except ValueError:
+            print("Response is not valid JSON.")
+            print(response.text)
+            return
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling autoLocate/devices endpoint: {e}")
+        return
+
+    # 5️⃣ Nicely print to terminal
+    print("\n===== AutoLocate Devices =====")
+    if not data:
+        print("No devices found.")
+    else:
+        for i, entry in enumerate(data, start=1):
+            # Handle case where entry is a string
+            if isinstance(entry, str):
+                try:
+                    entry = json.loads(entry)
+                except json.JSONDecodeError:
+                    print(f"Skipping entry #{i}, cannot parse string: {entry}")
+                    continue
+
+            items = entry.get("items", [])
+            if not items:
+                continue
+
+            print(f"\n--- Entry #{i} ---")
+            for device in items:
+                name = device.get("name", "N/A")
+                serial = device.get("serial", "N/A")
+                mac = device.get("mac", "N/A")
+                model = device.get("model", "N/A")
+                status = device.get("status", "N/A")
+                floorplan_name = device.get("floorPlan", {}).get("status", "N/A")
+                lat = device.get("lat", "N/A")
+                lng = device.get("lng", "N/A")
+                auto_lat = device.get("autoLocate", {}).get("lat", "N/A")
+                auto_lng = device.get("autoLocate", {}).get("lng", "N/A")
+                dev_type = device.get("type", "N/A")
+                is_anchor = device.get("isAnchor", False)
+                tags = ", ".join(device.get("tags", [])) if device.get("tags") else "N/A"
+
+                # Print formatted table-like block
+                print(f"{'Name:':<15}{name}")
+                print(f"{'Serial:':<15}{serial}")
+                print(f"{'MAC:':<15}{mac}")
+                print(f"{'Model:':<15}{model}")
+                print(f"{'Status:':<15}{status}")
+                print(f"{'Floor Plan:':<15}{floorplan_name}")
+                print(f"{'Lat/Lng:':<15}{lat}, {lng}")
+                print(f"{'AutoLocate:':<15}{auto_lat}, {auto_lng}")
+                print(f"{'Type:':<15}{dev_type}")
+                print(f"{'Is Anchor:':<15}{is_anchor}")
+                print(f"{'Tags:':<15}{tags}")
+                print("-" * 50)
+
+    # 6️⃣ Save to timestamped output file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"locationData_{timestamp}.json"
+    try:
+        with open(filename, "w") as f:
+            json.dump(data, f, indent=4)
+        print(f"\n✅ Data saved to {filename}")
+    except Exception as e:
+        print(f"Error saving file: {e}")
+
+if __name__ == "__main__":
+    main()
