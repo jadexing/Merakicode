@@ -1,0 +1,449 @@
+#!/usr/bin/env python3
+"""
+Meraki Option A: Download floorplans for chosen network(s), fetch AutoLocate data, and overlay APs on maps.
+
+- Prompts for API key
+- Lists networks; user selects one or "all"
+- Downloads floorplans for chosen networks
+- Downloads AutoLocate devices + statuses (org-level)
+- Attempts to map APs onto images using various heuristics
+- Saves raw + merged JSON to MAP_json/
+- Saves floorplan images to MerakiMaps/ and overlays to MerakiMaps/overlays/
+"""
+
+import os
+import json
+import requests
+from datetime import datetime
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+
+BASE = "https://api.meraki.com/api/v1"
+TIMEOUT = 15
+
+# ------------------------
+# Util helpers
+# ------------------------
+def mkdir(path):
+    os.makedirs(path, exist_ok=True)
+
+def ts():
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def prompt_api_key():
+    return input("Enter your Meraki API key: ").strip()
+
+def save_json(data, folder, prefix):
+    mkdir(folder)
+    filename = os.path.join(folder, f"{prefix}_{ts()}.json")
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+    print(f"Saved JSON -> {filename}")
+    return filename
+
+# ------------------------
+# Meraki API wrappers
+# ------------------------
+def meraki_get(api_key, path):
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    url = BASE + path
+    r = requests.get(url, headers=headers, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+def get_orgs(api_key):
+    return meraki_get(api_key, "/organizations")
+
+def get_networks(api_key, org_id):
+    return meraki_get(api_key, f"/organizations/{org_id}/networks")
+
+def get_floorplans_for_network(api_key, network_id):
+    return meraki_get(api_key, f"/networks/{network_id}/floorPlans")
+
+def get_autolocate_devices(api_key, org_id):
+    return meraki_get(api_key, f"/organizations/{org_id}/floorPlans/autoLocate/devices")
+
+def get_autolocate_statuses(api_key, org_id):
+    return meraki_get(api_key, f"/organizations/{org_id}/floorPlans/autoLocate/statuses")
+
+# ------------------------
+# Flatten device list helper
+# ------------------------
+def flatten_devices(devices_raw):
+    devices = []
+    if isinstance(devices_raw, list):
+        for entry in devices_raw:
+            if isinstance(entry, dict) and "items" in entry:
+                for d in entry["items"]:
+                    devices.append(d)
+            elif isinstance(entry, dict):
+                devices.append(entry)
+            else:
+                # skip non-dict
+                continue
+    elif isinstance(devices_raw, dict):
+        for d in devices_raw.get("items", []):
+            devices.append(d)
+    return devices
+
+# ------------------------
+# Download floorplan images (per network chosen)
+# Returns floorplan_map { floorPlanId: metadata... }
+# ------------------------
+def download_floorplans(api_key, networks_to_fetch):
+    mkdir("MerakiMaps")
+    floorplan_map = {}  # id -> metadata including image_path
+    downloaded = 0
+
+    for net in networks_to_fetch:
+        net_id = net.get("id")
+        net_name = net.get("name")
+        try:
+            fps = get_floorplans_for_network(api_key, net_id)
+        except Exception as e:
+            print(f"Warning: couldn't fetch floorplans for network {net_name} ({net_id}): {e}")
+            continue
+
+        for fp in fps:
+            fp_id = fp.get("id")
+            if not fp_id:
+                continue
+            name = fp.get("name") or f"floor_{fp_id}"
+            safe_name = "".join(c if c.isalnum() or c in ("_", "-") else "_" for c in name).strip()
+            image_url = fp.get("imageUrl")
+            fp_meta = {
+                "id": fp_id,
+                "name": name,
+                "safe_name": safe_name,
+                "imageUrl": image_url,
+                "topLeftCorner": fp.get("topLeftCorner"),
+                "bottomRightCorner": fp.get("bottomRightCorner"),
+                "width": fp.get("width"),
+                "height": fp.get("height"),
+                "networkId": net_id,
+                "networkName": net_name,
+                "image_path": None
+            }
+            floorplan_map[fp_id] = fp_meta
+
+            if image_url:
+                try:
+                    r = requests.get(image_url, timeout=TIMEOUT)
+                    r.raise_for_status()
+                    path = os.path.join("MerakiMaps", f"{safe_name}_{fp_id}.png")
+                    with open(path, "wb") as fh:
+                        fh.write(r.content)
+                    fp_meta["image_path"] = path
+                    downloaded += 1
+                    print(f"Downloaded floorplan image: {path}")
+                except Exception as e:
+                    print(f"Failed to download image for {name} ({fp_id}): {e}")
+            else:
+                print(f"No imageUrl for floorplan {name} ({fp_id}) — cannot create visual map.")
+
+    print(f"Downloaded {downloaded} floorplan image(s).")
+    return floorplan_map
+
+# ------------------------
+# Coordinate -> pixel heuristics
+# ------------------------
+def coords_to_pixel(device, fp_meta, img):
+    """
+    Try several heuristics to determine pixel coords (x,y) on img for device.
+    Returns (x,y,reason) or (None,None,reason).
+    """
+    # 1) direct x/y keys
+    if "x" in device and "y" in device:
+        try:
+            x = int(round(float(device["x"])))
+            y = int(round(float(device["y"])))
+            return x, y, "direct_xy"
+        except Exception:
+            pass
+
+    # 2) 'autoLocate' object with lat/lng OR fractional coords
+    auto = device.get("autoLocate") or {}
+    a_lat = auto.get("lat")
+    a_lng = auto.get("lng")
+    # if both present and look fractional 0..1
+    if a_lat is not None and a_lng is not None:
+        try:
+            al = float(a_lat); ag = float(a_lng)
+            if 0.0 <= al <= 1.0 and 0.0 <= ag <= 1.0:
+                x = int(round(ag * img.width))
+                y = int(round(al * img.height))
+                return x, y, "auto_fraction"
+        except Exception:
+            pass
+
+    # 3) topLeftCorner / bottomRightCorner mapping (lat/lng -> pixels)
+    tl = fp_meta.get("topLeftCorner")
+    br = fp_meta.get("bottomRightCorner")
+    if tl and br and a_lat is not None and a_lng is not None:
+        try:
+            top_lat = float(tl.get("lat"))
+            left_lng = float(tl.get("lng"))
+            bottom_lat = float(br.get("lat"))
+            right_lng = float(br.get("lng"))
+            lat = float(a_lat); lng = float(a_lng)
+            # handle possible inverted lat order
+            lat_span = top_lat - bottom_lat
+            lng_span = right_lng - left_lng
+            if lat_span == 0 or lng_span == 0:
+                return None, None, "zero_georef_span"
+            # x increases with lng
+            x_frac = (lng - left_lng) / lng_span
+            # y increases downward -> map from top_lat to bottom_lat
+            y_frac = (top_lat - lat) / lat_span
+            x = int(round(x_frac * img.width))
+            y = int(round(y_frac * img.height))
+            return x, y, "latlng_georef"
+        except Exception:
+            pass
+
+    # 4) top-level lat/lng fields (device.lat/device.lng)
+    lat = device.get("lat")
+    lng = device.get("lng")
+    if lat is not None and lng is not None and tl and br:
+        try:
+            lat = float(lat); lng = float(lng)
+            top_lat = float(tl.get("lat")); left_lng = float(tl.get("lng"))
+            bottom_lat = float(br.get("lat")); right_lng = float(br.get("lng"))
+            lat_span = top_lat - bottom_lat
+            lng_span = right_lng - left_lng
+            if lat_span and lng_span:
+                x_frac = (lng - left_lng) / lng_span
+                y_frac = (top_lat - lat) / lat_span
+                x = int(round(x_frac * img.width))
+                y = int(round(y_frac * img.height))
+                return x, y, "latlng_top_level_georef"
+        except Exception:
+            pass
+
+    # 5) If device has 'x'/'y' nested in some object (e.g., device.get('location'))
+    loc = device.get("location") or {}
+    if "x" in loc and "y" in loc:
+        try:
+            x = int(round(float(loc["x"])))
+            y = int(round(float(loc["y"])))
+            return x, y, "location_xy"
+        except Exception:
+            pass
+
+    # 6) if floorplan width/height and auto values in similar units (heuristic)
+    fp_w = fp_meta.get("width")
+    fp_h = fp_meta.get("height")
+    if fp_w and fp_h and a_lat is not None and a_lng is not None:
+        try:
+            al = float(a_lat); ag = float(a_lng)
+            fw = float(fp_w); fh = float(fp_h)
+            # if auto coords are within the floorplan unit extents, map proportionally
+            if 0 <= ag <= fw and 0 <= al <= fh:
+                x = int(round((ag / fw) * img.width))
+                y = int(round((al / fh) * img.height))
+                return x, y, "auto_units_mapped"
+        except Exception:
+            pass
+
+    # 7) fallback: unable to compute
+    return None, None, "no_valid_coords"
+
+# ------------------------
+# Draw overlays for APs
+# ------------------------
+def overlay_all_devices(floorplan_map, devices):
+    mkdir(os.path.join("MerakiMaps", "overlays"))
+    font = None
+    try:
+        font = ImageFont.load_default()
+    except Exception:
+        font = None
+
+    plotted = 0
+    skipped = 0
+    merged_output = []
+
+    for device in devices:
+        # extract floorPlan id
+        fp_id = None
+        # common locations
+        if isinstance(device.get("floorPlan"), dict):
+            fp_id = device["floorPlan"].get("id")
+        if not fp_id:
+            # sometimes top-level key
+            fp_id = device.get("floorPlanId") or device.get("floorPlanid") or device.get("floorplanId")
+        if not fp_id:
+            merged_output.append({"device": device, "mapped": False, "reason": "no_floorPlan_id"})
+            skipped += 1
+            continue
+
+        fp_meta = floorplan_map.get(fp_id)
+        if not fp_meta:
+            merged_output.append({"device": device, "mapped": False, "reason": f"floorplan_{fp_id}_not_found"})
+            skipped += 1
+            continue
+
+        img_path = fp_meta.get("image_path")
+        if not img_path or not os.path.exists(img_path):
+            merged_output.append({"device": device, "mapped": False, "reason": f"no_image_for_floorplan_{fp_id}"})
+            skipped += 1
+            continue
+
+        try:
+            img = Image.open(img_path).convert("RGBA")
+        except Exception as e:
+            merged_output.append({"device": device, "mapped": False, "reason": f"open_image_failed:{e}"})
+            skipped += 1
+            continue
+
+        x, y, reason = coords_to_pixel(device, fp_meta, img)
+        if x is None or y is None:
+            merged_output.append({
+                "device": device,
+                "mapped": False,
+                "reason": reason,
+                "floorPlan": {"id": fp_id, "name": fp_meta.get("name"), "image": img_path}
+            })
+            skipped += 1
+            continue
+
+        # Draw marker
+        draw = ImageDraw.Draw(img)
+        r = 8
+        draw.ellipse((x-r, y-r, x+r, y+r), fill=(255,0,0,200), outline=(255,255,255))
+        label = device.get("name") or device.get("serial") or device.get("mac") or "AP"
+        tx = x + r + 2
+        ty = max(0, y - r)
+        try:
+            draw.text((tx, ty), label, fill=(0,0,0), font=font)
+        except Exception:
+            pass
+
+        # Save overlay: preserve previous plotted APs by opening existing overlay if present
+        safe = fp_meta.get("safe_name", "floor")
+        out_name = f"{safe}_{fp_id}_overlay.png"
+        out_path = os.path.join("MerakiMaps", "overlays", out_name)
+        if os.path.exists(out_path):
+            try:
+                base = Image.open(out_path).convert("RGBA")
+                base.paste(img, (0,0), img)
+                base.save(out_path)
+            except Exception:
+                img.save(out_path)
+        else:
+            img.save(out_path)
+
+        merged_output.append({
+            "device": device,
+            "mapped": True,
+            "reason": reason,
+            "floorPlanId": fp_id,
+            "image": out_path,
+            "pixel": {"x": x, "y": y}
+        })
+        plotted += 1
+
+    return merged_output, plotted, skipped
+
+# ------------------------
+# Main (Option A flow)
+# ------------------------
+def main():
+    print("Meraki AutoLocate — Option A (choose network(s))")
+    api_key = prompt_api_key()
+    if not api_key:
+        print("API key required. Exiting.")
+        return
+
+    try:
+        orgs = get_orgs(api_key)
+    except Exception as e:
+        print(f"Failed to get organizations: {e}")
+        return
+
+    if not isinstance(orgs, list) or len(orgs) == 0:
+        print("No organizations available. Exiting.")
+        return
+
+    org = orgs[0] if len(orgs) == 1 else None
+    org_id = None
+    if org:
+        org_id = org.get("id")
+        print(f"Using org: {org.get('name')} ({org_id})")
+    else:
+        print("Organizations:")
+        for idx, o in enumerate(orgs, start=1):
+            print(f"  {idx}. {o.get('name')} ({o.get('id')})")
+        sel = input("Select organization number: ").strip()
+        try:
+            idx = int(sel) - 1
+            org_id = orgs[idx].get("id")
+        except Exception:
+            print("Invalid selection. Exiting.")
+            return
+
+    # List networks and let user choose one or all
+    try:
+        networks = get_networks(api_key, org_id)
+    except Exception as e:
+        print(f"Failed to fetch networks: {e}")
+        return
+
+    if not networks:
+        print("No networks found in org. Exiting.")
+        return
+
+    print("\nNetworks:")
+    for i, n in enumerate(networks, start=1):
+        print(f"  {i}. {n.get('name')} ({n.get('id')})")
+    print("  A. All networks")
+    choice = input("Select network number or 'A' for all: ").strip()
+    networks_to_fetch = []
+    if choice.lower() == "a":
+        networks_to_fetch = networks
+    else:
+        try:
+            idx = int(choice) - 1
+            networks_to_fetch = [networks[idx]]
+        except Exception:
+            print("Invalid selection. Exiting.")
+            return
+
+    # Fetch AutoLocate data (devices & statuses)
+    try:
+        devices_raw = get_autolocate_devices(api_key, org_id)
+        save_json(devices_raw, "MAP_json", "LocData_devices")
+    except Exception as e:
+        print(f"Failed to fetch devices: {e}")
+        devices_raw = None
+
+    try:
+        statuses_raw = get_autolocate_statuses(api_key, org_id)
+        save_json(statuses_raw, "MAP_json", "APdata_statuses")
+    except Exception as e:
+        print(f"Failed to fetch statuses: {e}")
+        statuses_raw = None
+
+    # Download floorplans for the selected network(s)
+    floorplan_map = download_floorplans(api_key, networks_to_fetch)
+
+    # Flatten devices list and overlay
+    devices = flatten_devices(devices_raw) if devices_raw else []
+    print(f"\nDevices found (flattened): {len(devices)}")
+
+    merged, plotted, skipped = overlay_all_devices(floorplan_map, devices)
+
+    # Save merged results
+    save_json(merged, "MAP_json", "Merged_APs")
+    print("\n--- Summary ---")
+    print(f"Floorplan images available: {sum(1 for v in floorplan_map.values() if v.get('image_path'))}")
+    print(f"Devices processed: {len(merged)}")
+    print(f"Devices plotted: {plotted}")
+    print(f"Devices skipped: {skipped}")
+    print("\nOutputs:")
+    print(" - Raw JSONs, merged JSON -> MAP_json/")
+    print(" - Raw floorplan images -> MerakiMaps/")
+    print(" - Overlaid visual maps -> MerakiMaps/overlays/")
+
+if __name__ == "__main__":
+    main()
