@@ -1,0 +1,177 @@
+"""
+Meraki Floorplan Downloader
+---------------------------------
+###This is for manually placed APs, rather than for AutoLocate APs###
+
+• Prompts user for API key
+• Auto-selects org if only one
+• Loops through every network
+• Pulls floorplans using /networks/{networkId}/floorPlans
+• Saves metadata
+• Downloads images named {floorPlanId}.png
+"""
+
+import os
+import json
+import requests
+
+BASE_URL = "https://api.meraki.com/api/v1"
+
+# ----------------------------------------------------
+# Prompt for API Key
+# ----------------------------------------------------
+def get_api_key():
+    return input("Enter your Meraki API key: ").strip()
+
+
+# ----------------------------------------------------
+# Retrieve organizations
+# ----------------------------------------------------
+def get_orgs(api_key):
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    resp = requests.get(f"{BASE_URL}/organizations", headers=headers)
+
+    try:
+        resp.raise_for_status()
+        return resp.json()
+    except:
+        print("❌ ERROR retrieving organizations")
+        print(resp.text)
+        return []
+
+
+# ----------------------------------------------------
+# Get networks for an org
+# ----------------------------------------------------
+def get_networks(api_key, org_id):
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    resp = requests.get(f"{BASE_URL}/organizations/{org_id}/networks", headers=headers)
+
+    try:
+        resp.raise_for_status()
+        return resp.json()
+    except:
+        print(f"❌ ERROR retrieving networks for org {org_id}")
+        print(resp.text)
+        return []
+
+
+# ----------------------------------------------------
+# Get floorplans for a given network
+# ----------------------------------------------------
+def get_floorplans(api_key, network_id):
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    url = f"{BASE_URL}/networks/{network_id}/floorPlans"
+    resp = requests.get(url, headers=headers)
+
+    try:
+        resp.raise_for_status()
+        return resp.json()
+    except:
+        print(f"❌ ERROR retrieving floorplans for network {network_id}")
+        print(resp.text)
+        return []
+
+
+# ----------------------------------------------------
+# Download a single floorplan image
+# ----------------------------------------------------
+def download_floorplan_image(api_key, fp):
+    image_url = fp.get("imageUrl")
+    fp_id = fp.get("floorPlanId")
+
+    if not fp_id:
+        print("⚠️ Missing floorPlanId — skipping image download")
+        return None
+
+    if not image_url:
+        print(f"⚠️ No imageUrl available for {fp_id}")
+        return None
+
+    headers = {"X-Cisco-Meraki-API-Key": api_key}
+    resp = requests.get(image_url, headers=headers, stream=True)
+
+    if resp.status_code != 200:
+        print(f"❌ Could not download image for {fp_id} (HTTP {resp.status_code})")
+        return None
+
+    os.makedirs("FloorPlans", exist_ok=True)
+    filename = os.path.join("FloorPlans", f"{fp_id}.png")
+
+    with open(filename, "wb") as f:
+        for chunk in resp.iter_content(1024):
+            f.write(chunk)
+
+    print(f"📥 Saved image: {filename}")
+    return filename
+
+
+# ----------------------------------------------------
+# MAIN
+# ----------------------------------------------------
+def main():
+    api_key = get_api_key()
+    orgs = get_orgs(api_key)
+
+    if not orgs:
+        print("❌ No orgs available.")
+        return
+
+    # Auto-select org if only one
+    if len(orgs) == 1:
+        org_id = orgs[0]["id"]
+        print(f"✅ One org detected: {orgs[0]['name']} ({org_id})")
+    else:
+        print("Organizations:")
+        for i, org in enumerate(orgs, 1):
+            print(f"{i}. {org['name']}  (ID: {org['id']})")
+
+        try:
+            selection = int(input("\nSelect an org number: "))
+            org_id = orgs[selection - 1]["id"]
+        except:
+            print("Invalid org selection.")
+            return
+
+    print(f"\n🔎 Scanning networks in org {org_id}...\n")
+    networks = get_networks(api_key, org_id)
+
+    all_metadata = []
+
+    for net in networks:
+        net_id = net["id"]
+        net_name = net.get("name", "Unnamed Network")
+
+        print(f"\n🌐 Network: {net_name} ({net_id})")
+        fps = get_floorplans(api_key, net_id)
+
+        if not fps:
+            print("   ↳ No floorplans found.")
+            continue
+
+        for fp in fps:
+            fp_id = fp.get("floorPlanId")
+            name = fp.get("name", "Unnamed Floorplan")
+
+            print(f"➡️  Floorplan: {name}")
+            print(f"🆔 floorPlanId: {fp_id}")
+
+            # Download image
+            local_path = download_floorplan_image(api_key, fp)
+
+            # Save metadata
+            fp["downloadedFile"] = local_path
+            fp["networkId"] = net_id
+            all_metadata.append(fp)
+
+    # Write combined metadata file
+    with open("floorplans_full_metadata.json", "w") as f:
+        json.dump(all_metadata, f, indent=4)
+
+    print("\n✅ DONE! All metadata saved to floorplans_full_metadata.json")
+    print("📂 Images saved in the FloorPlans/ folder\n")
+
+
+# ----------------------------------------------------
+if __name__ == "__main__":
+    main()
