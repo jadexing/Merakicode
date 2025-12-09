@@ -11,6 +11,7 @@ Saves the full data to a timestamped JSON file for later use.
 List Organizations
 GET https://api.meraki.com/api/v1/organizations
 
+####This uses auto locate, it will not work with manually placed APs####
 Get AutoLocate Devices
 GET https://api.meraki.com/api/v1/organizations/{organizationId}/floorPlans/autoLocate/devices
 
