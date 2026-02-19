@@ -1,0 +1,183 @@
+"""
+High-level purpose
+
+Prompts you for a Meraki Dashboard API key
+Lists the organizations your key can see and lets you pick one
+Lists the networks in that org and lets you pick one network or “all”
+For each chosen network, it queries SSID indices 0–15 (Meraki supports up to 16 SSIDs)
+It filters SSIDs based on “enabled” (with a redundant condition—details below)
+Writes the collected SSID settings into an Excel spreadsheet, auto-sizing columns for readability
+
+Specifically, you can see if a site has WPA2 or WPA3.
+
+Output file name looks like:
+ssid_data_YYYY-MM-DD_HH-MM-SS.xlsx
+
+GET /organizations
+GET /organizations/{organizationId}/networks
+GET /networks/{networkId}/wireless/ssids/{ssidNumber}
+
+All calls are to:
+
+https://api.meraki.com/api/v1/
+Authenticated with the header:
+X-Cisco-Meraki-API-Key
+
+"""
+
+
+import requests
+import time
+from datetime import datetime
+import pandas as pd
+
+BASE_URL = 'https://api.meraki.com/api/v1/'
+
+def get_api_key():
+    """Prompt the user for their Meraki Dashboard API key."""
+    return input("Enter your Meraki API key: ").strip()
+
+
+def get_organizations(api_key):
+    """Return all organizations visible to the supplied API key."""
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    try:
+        resp = requests.get(f"{BASE_URL}organizations", headers=headers, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.RequestException as exc:
+        print(f"Error retrieving organizations: {exc}")
+        return []
+
+
+def display_organizations(orgs):
+    print("\nOrganizations:")
+    for idx, org in enumerate(orgs, 1):
+        print(f"{idx}. {org['name']} (ID: {org['id']})")
+    print()
+
+
+def select_organization(orgs):
+    if len(orgs) == 1:
+        print(f"Only one organization found: {orgs[0]['name']}")
+        return orgs[0]['id']
+    while True:
+        try:
+            choice = int(input("Choose an organization by number: "))
+            if 1 <= choice <= len(orgs):
+                return orgs[choice - 1]['id']
+        except ValueError:
+            pass
+        print("Invalid choice, try again.")
+
+
+def get_networks(api_key, org_id):
+    """Return all networks inside an organization."""
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    try:
+        resp = requests.get(f"{BASE_URL}organizations/{org_id}/networks", headers=headers, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.RequestException as exc:
+        print(f"Error retrieving networks: {exc}")
+        return []
+
+
+def display_networks(nets):
+    nets_sorted = sorted(nets, key=lambda n: n['name'].lower())
+    print("\nNetworks:")
+    for idx, net in enumerate(nets_sorted, 1):
+        print(f"{idx}. {net['name']} (ID: {net['id']})")
+    print()
+    return nets_sorted
+
+
+def get_ssid_data(api_key, net_id, ssid_number, retries=3):
+    headers = {'X-Cisco-Meraki-API-Key': api_key}
+    url = f"{BASE_URL}networks/{net_id}/wireless/ssids/{ssid_number}"
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, headers=headers, timeout=30)
+            if resp.status_code == 404:
+                return {}
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.Timeout:
+            print(f"Time‑out for SSID {ssid_number}. Retrying {attempt + 1}/{retries}…")
+            time.sleep(5)
+        except requests.exceptions.RequestException as exc:
+            print(f"Error retrieving SSID {ssid_number}: {exc}")
+            break
+    return {}
+
+
+def gather_ssid_data(api_key, networks):
+    collected = []
+    for net in networks:
+        print(f"\n▶ Fetching SSIDs for {net['name']} …")
+        for ssid in range(16):  # Meraki SSIDs are indexed 0‑15
+            data = get_ssid_data(api_key, net['id'], ssid)
+            if data and data.get('enabled') and (data.get('encryptionMode') == 'Open' or data.get('enabled')):
+                data['network_name'] = net['name']  # add context
+                collected.append(data)
+    return collected
+
+
+def write_to_excel(data):
+    """Write collected SSID dictionaries to an Excel (*.xlsx) file."""
+    if not data:
+        print("No SSID records meet the criteria.")
+        return
+
+    df = pd.DataFrame(data)
+
+    # Preferred column order
+    first_cols = ['network_name', 'name', 'defaultVlanId']
+    remaining = [c for c in df.columns if c not in first_cols]
+    df = df[first_cols + remaining]
+
+    filename = f"ssid_data_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+    with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='SSID Data')
+
+        # Auto‑size column widths for readability
+        ws = writer.sheets['SSID Data']
+        for col in ws.columns:
+            max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
+            ws.column_dimensions[col[0].column_letter].width = max_length + 2
+
+    print(f"\n✅ Data written to {filename}")
+
+
+def main():
+    start = time.time()
+    print("Meraki SSID Excel Export\n")
+
+    api_key = get_api_key()
+    orgs = get_organizations(api_key)
+    if not orgs:
+        return
+
+    display_organizations(orgs)
+    org_id = select_organization(orgs)
+
+    nets = get_networks(api_key, org_id)
+    if not nets:
+        return
+
+    nets_sorted = display_networks(nets)
+
+    choice = input("Enter network number to query or press Enter for all: ").strip()
+    chosen_nets = nets_sorted if choice == "" else [nets_sorted[int(choice) - 1]]
+
+    ssid_records = gather_ssid_data(api_key, chosen_nets)
+    write_to_excel(ssid_records)
+
+    elapsed = int(time.time() - start)
+    hrs, rem = divmod(elapsed, 3600)
+    mins, secs = divmod(rem, 60)
+    print(f"\nFinished in {hrs}h {mins}m {secs}s.")
+
+
+if __name__ == "__main__":
+    main()
