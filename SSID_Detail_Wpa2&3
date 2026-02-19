@@ -1,0 +1,143 @@
+"""
+High-level purpose
+
+Prompts you for a Meraki Dashboard API key
+Lists the organizations your key can see and lets you pick one
+Lists the networks in that org and lets you pick one network or “all”
+For each chosen network, it queries SSID indices 0–15 (Meraki supports up to 16 SSIDs)
+It filters SSIDs based on “enabled” (with a redundant condition—details below)
+Writes the collected SSID settings into an Excel spreadsheet, auto-sizing columns for readability
+
+Output file name looks like:
+ssid_data_YYYY-MM-DD_HH-MM-SS.xlsx
+
+Details WPA2/WPA3
+"""
+
+import requests
+import json
+
+def meraki_get(url, api_key):
+    """Helper function to call Meraki API and return JSON or None."""
+    headers = {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+    resp = requests.get(url, headers=headers)
+
+    # Some APs return 204 or 404 for this endpoint
+    if resp.status_code in (204, 404):
+        return None
+
+    try:
+        return resp.json()
+    except:
+        return None
+
+
+def main():
+
+    print("Hello! Welcome to this script that will display Meraki AP radio information.")
+    print("This script will:")
+    print(" • Ask for your API key")
+    print(" • Pull all networks in your organization")
+    print(" • Pull all APs in each network")
+    print(" • Use /wireless/status to display full radio details\n")
+
+    api_key = input("Please enter your API key: ").strip()
+
+    print("\nPulling your organization information...")
+    orgs = meraki_get("https://api.meraki.com/api/v1/organizations", api_key)
+
+    if not orgs:
+        print("No organizations found for this API key.")
+        return
+
+    org = orgs[0]
+    org_id = org["id"]
+    print(f"Using organization: {org['name']} ({org_id})\n")
+
+    print("Pulling all networks in this organization...")
+    networks = meraki_get(
+        f"https://api.meraki.com/api/v1/organizations/{org_id}/networks",
+        api_key
+    )
+
+    if not networks:
+        print("No networks found.")
+        return
+
+    print(f"Found {len(networks)} networks.\n")
+    print("Starting AP radio scan using /wireless/status\n")
+
+    for net in networks:
+        network_id = net["id"]
+        network_name = net["name"]
+
+        print(f"=== Network: {network_name} ({network_id}) ===")
+
+        devices = meraki_get(
+            f"https://api.meraki.com/api/v1/networks/{network_id}/devices",
+            api_key
+        )
+
+        if not devices:
+            print("  No devices found.\n")
+            continue
+
+        # Filter APs (MR and CW models)
+        aps = [d for d in devices if d.get("model", "").startswith(("MR", "CW"))]
+        print(f"  Found {len(aps)} APs.\n")
+
+        for ap in aps:
+            name = ap.get("name", "Unnamed AP")
+            serial = ap["serial"]
+            model = ap.get("model", "")
+
+            print(f"  Checking AP: {name} ({serial}) — Model {model}")
+
+            # Call the wireless/status endpoint
+            status = meraki_get(
+                f"https://api.meraki.com/api/v1/networks/{network_id}/devices/{serial}/wireless/status",
+                api_key
+            )
+
+            if not status:
+                print("    No wireless status returned.\n")
+                continue
+
+            # Your environment uses "basicServiceSets"
+            bss_list = status.get("basicServiceSets", [])
+
+            if not bss_list:
+                print("    No basicServiceSets found.\n")
+                continue
+
+            for bss in bss_list:
+                ssid = bss.get("ssidName")
+                band = bss.get("band")
+                channel = bss.get("channel")
+                width = bss.get("channelWidth")
+                power = bss.get("power")
+                bssid = bss.get("bssid")
+                visible = bss.get("visible")
+                broadcasting = bss.get("broadcasting")
+
+                print(f"    SSID: {ssid}")
+                print(f"      Band: {band}")
+                print(f"      Channel: {channel}")
+                print(f"      Channel Width: {width}")
+                print(f"      Power: {power}")
+                print(f"      BSSID: {bssid}")
+                print(f"      Visible: {visible}")
+                print(f"      Broadcasting: {broadcasting}\n")
+
+        print()
+
+    print("All networks processed. Thank you for using this script!\n")
+
+
+if __name__ == "__main__":
+    main()
