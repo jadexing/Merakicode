@@ -48,8 +48,9 @@ def main():
     print("Hello! Welcome to this script that will display Meraki AP radio information.")
     print("This script will:")
     print(" • Ask for your API key")
-    print(" • Pull all networks in your organization")
-    print(" • Pull all APs in each network")
+    print(" • Pull ALL organizations tied to your API key")
+    print(" • Pull ALL networks in each organization")
+    print(" • Pull ALL APs in each network")
     print(" • Use /wireless/status to display full radio details")
     print(" • Export all results to a single Excel file with one tab per network")
     print(" • Handle timeouts and retry automatically\n")
@@ -60,124 +61,130 @@ def main():
     wb = Workbook()
     wb.remove(wb.active)  # Remove default sheet
 
-    print("\nPulling your organization information...")
+    print("\nPulling your organizations...")
     orgs = meraki_get("https://api.meraki.com/api/v1/organizations", api_key)
 
     if not orgs:
         print("No organizations found for this API key.")
         return
 
-    org = orgs[0]
-    org_id = org["id"]
-    print(f"Using organization: {org['name']} ({org_id})\n")
+    print(f"Found {len(orgs)} organizations.\n")
 
-    print("Pulling all networks in this organization...")
-    networks = meraki_get(
-        f"https://api.meraki.com/api/v1/organizations/{org_id}/networks",
-        api_key
-    )
+    # ⭐ Loop through ALL organizations
+    for org in orgs:
+        org_id = org["id"]
+        org_name = org["name"]
 
-    if not networks:
-        print("No networks found.")
-        return
+        print(f"\n=== Processing Organization: {org_name} ({org_id}) ===\n")
 
-    print(f"Found {len(networks)} networks.\n")
-    print("Starting AP radio scan using /wireless/status\n")
-
-    for net in networks:
-        network_id = net["id"]
-        network_name = net["name"]
-
-        print(f"=== Network: {network_name} ({network_id}) ===")
-
-        # Create a sheet for this network
-        safe_name = network_name[:31]  # Excel sheet name limit
-        ws = wb.create_sheet(title=safe_name)
-
-        # Write header row
-        ws.append([
-            "AP Name",
-            "Serial",
-            "Model",
-            "SSID",
-            "Band",
-            "Channel",
-            "Channel Width",
-            "Power",
-            "BSSID",
-            "Visible",
-            "Broadcasting"
-        ])
-
-        devices = meraki_get(
-            f"https://api.meraki.com/api/v1/networks/{network_id}/devices",
+        print("Pulling networks...")
+        networks = meraki_get(
+            f"https://api.meraki.com/api/v1/organizations/{org_id}/networks",
             api_key
         )
 
-        if not devices:
-            print("  No devices found.\n")
+        if not networks:
+            print("No networks found in this organization.\n")
             continue
 
-        aps = [d for d in devices if d.get("model", "").startswith(("MR", "CW"))]
-        print(f"  Found {len(aps)} APs.\n")
+        print(f"Found {len(networks)} networks.\n")
+        print("Starting AP radio scan using /wireless/status\n")
 
-        for ap in aps:
-            name = ap.get("name", "Unnamed AP")
-            serial = ap["serial"]
-            model = ap.get("model", "")
+        # ⭐ Loop through ALL networks in this org
+        for net in networks:
+            network_id = net["id"]
+            network_name = net["name"]
 
-            print(f"  Checking AP: {name} ({serial}) — Model {model}")
+            print(f"=== Network: {network_name} ({network_id}) ===")
 
-            status = meraki_get(
-                f"https://api.meraki.com/api/v1/networks/{network_id}/devices/{serial}/wireless/status",
+            # Create a sheet for this network
+            safe_name = network_name[:31]  # Excel sheet name limit
+            ws = wb.create_sheet(title=safe_name)
+
+            # Write header row
+            ws.append([
+                "AP Name",
+                "Serial",
+                "Model",
+                "SSID",
+                "Band",
+                "Channel",
+                "Channel Width",
+                "Power",
+                "BSSID",
+                "Visible",
+                "Broadcasting"
+            ])
+
+            devices = meraki_get(
+                f"https://api.meraki.com/api/v1/networks/{network_id}/devices",
                 api_key
             )
 
-            if not status:
-                print("    No wireless status returned.\n")
+            if not devices:
+                print("  No devices found.\n")
                 continue
 
-            bss_list = status.get("basicServiceSets", [])
+            aps = [d for d in devices if d.get("model", "").startswith(("MR", "CW"))]
+            print(f"  Found {len(aps)} APs.\n")
 
-            if not bss_list:
-                print("    No basicServiceSets found.\n")
-                continue
+            for ap in aps:
+                name = ap.get("name", "Unnamed AP")
+                serial = ap["serial"]
+                model = ap.get("model", "")
 
-            for bss in bss_list:
-                ssid = bss.get("ssidName")
-                band = bss.get("band")
-                channel = bss.get("channel")
-                width = bss.get("channelWidth")
-                power = bss.get("power")
-                bssid = bss.get("bssid")
-                visible = bss.get("visible")
-                broadcasting = bss.get("broadcasting")
+                print(f"  Checking AP: {name} ({serial}) — Model {model}")
 
-                print(f"    SSID: {ssid}")
-                print(f"      Band: {band}")
-                print(f"      Channel: {channel}")
-                print(f"      Channel Width: {width}")
-                print(f"      Power: {power}")
-                print(f"      BSSID: {bssid}")
-                print(f"      Visible: {visible}")
-                print(f"      Broadcasting: {broadcasting}\n")
+                status = meraki_get(
+                    f"https://api.meraki.com/api/v1/networks/{network_id}/devices/{serial}/wireless/status",
+                    api_key
+                )
 
-                # Write to Excel sheet
-                ws.append([
-                    name,
-                    serial,
-                    model,
-                    ssid,
-                    band,
-                    channel,
-                    width,
-                    power,
-                    bssid,
-                    visible,
-                    broadcasting
-                ])
+                if not status:
+                    print("    No wireless status returned.\n")
+                    continue
 
-        print()
+                bss_list = status.get("basicServiceSets", [])
+
+                if not bss_list:
+                    print("    No basicServiceSets found.\n")
+                    continue
+
+                for bss in bss_list:
+                    ssid = bss.get("ssidName")
+                    band = bss.get("band")
+                    channel = bss.get("channel")
+                    width = bss.get("channelWidth")
+                    power = bss.get("power")
+                    bssid = bss.get("bssid")
+                    visible = bss.get("visible")
+                    broadcasting = bss.get("broadcasting")
+
+                    print(f"    SSID: {ssid}")
+                    print(f"      Band: {band}")
+                    print(f"      Channel: {channel}")
+                    print(f"      Channel Width: {width}")
+                    print(f"      Power: {power}")
+                    print(f"      BSSID: {bssid}")
+                    print(f"      Visible: {visible}")
+                    print(f"      Broadcasting: {broadcasting}\n")
+
+                    # Write to Excel sheet
+                    ws.append([
+                        name,
+                        serial,
+                        model,
+                        ssid,
+                        band,
+                        channel,
+                        width,
+                        power,
+                        bssid,
+                        visible,
+                        broadcasting
+                    ])
+
+            print()
 
     # Save Excel file
     filename = "ap_radio_export.xlsx"
@@ -191,7 +198,7 @@ def main():
     minutes = int((elapsed % 3600) // 60)
     seconds = int(elapsed % 60)
 
-    print("All networks processed. Thank you for using this script!")
+    print("All organizations and networks processed. Thank you for using this script!")
     print(f"Excel export saved as {filename}")
     print(f"Total runtime: {hours}h {minutes}m {seconds}s\n")
 
