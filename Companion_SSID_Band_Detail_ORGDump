@@ -1,0 +1,241 @@
+"""
+Absolutely — this script is a companion to the earlier SSID/Excel-export workflow  "SSID_Band_Detail_ORGDump" in the sense that it’s designed to take a CSV or Excel file you already generated/exported (often from Meraki/Mist reporting or a prior script) and then analyze it to find 6 GHz–capable APs that are not showing 6 GHz activity (based on the file’s “Band” values). It then produces a clean Excel report summarizing the findings.
+Below is what it does, in plain English, and how it works.
+
+What this companion script does (high level)
+
+Finds the newest CSV or XLSX in the current folder (or lets you choose a file).
+Loads the data:
+
+If it’s Excel: reads all tabs from the workbook.
+If it’s CSV: reads the rows (tries UTF‑8 first, falls back to latin‑1 if needed).
+
+
+For each row, it looks for these columns:
+
+Serial
+Model
+Band
+AP Name
+
+
+It determines which AP models are 6 GHz-capable using a built-in model prefix list (Cisco CW916x/CW917x family entries).
+It flags whether each AP is actually broadcasting / observed in 6 GHz, based on whether any row for that AP shows:
+
+Band == "6 GHz" and the model is 6 GHz capable
+
+
+It builds a list of 6 GHz-capable APs that never show “6 GHz” in the dataset.
+It outputs a new Excel file:
+6ghz_missing_report_YYYY-MM-DD_HH-MM-SS.xlsx
+with multiple tabs (Summary, exceptions, and lists).
+
+"""
+
+import csv
+import os
+import glob
+from datetime import datetime
+from openpyxl import load_workbook, Workbook
+
+# List of Meraki-managed AP models that support 6 GHz
+six_ghz_models = [
+    "CW9166", "CW9164", "CW9162",
+    "CW9176", "CW9176I", "CW9176D1",
+    "CW9172", "CW9172I",
+    "CW9178", "CW9178I",
+    "CW9179", "CW9179F"
+]
+
+def model_supports_6ghz(model):
+    if not model:
+        return False
+    model = model.strip().upper()
+    return any(model.startswith(prefix) for prefix in six_ghz_models)
+
+def get_newest_file():
+    files = glob.glob("*.csv") + glob.glob("*.xlsx")
+    if not files:
+        return None
+    return max(files, key=os.path.getmtime)
+
+def load_data_file(filename):
+    """Load CSV or XLSX and return a list of dict rows."""
+    if filename.lower().endswith(".xlsx"):
+        print("Reading Excel file (all tabs)...")
+        wb = load_workbook(filename, data_only=True)
+        all_rows = []
+
+        for ws in wb.worksheets:
+            rows = list(ws.values)
+            if not rows:
+                continue
+
+            headers = [str(h).strip() for h in rows[0]]
+            for row in rows[1:]:
+                all_rows.append({headers[i]: row[i] for i in range(len(headers))})
+
+        return all_rows
+
+    # CSV fallback
+    try:
+        f = open(filename, "r", newline="", encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        print("⚠ UTF‑8 decode failed. Retrying with latin‑1 encoding...")
+        f = open(filename, "r", newline="", encoding="latin-1")
+
+    reader = csv.DictReader(f)
+    return list(reader)
+
+def extract_network_from_apname(ap_name):
+    """Network = everything before the second dash."""
+    if not ap_name:
+        return "Unknown"
+
+    parts = ap_name.split("-")
+
+    if len(parts) >= 2:
+        return f"{parts[0]}-{parts[1]}".strip()
+
+    return parts[0].strip()
+
+def main():
+    newest = get_newest_file()
+
+    if newest:
+        print(f"Newest file detected: {newest}")
+        choice = input("Is this the correct file to analyze? (Y/N): ").strip().upper()
+    else:
+        print("No CSV or XLSX files found in this folder.")
+        choice = "N"
+
+    if choice != "Y":
+        filename = input("Please type the CSV or XLSX filename to analyze: ").strip()
+    else:
+        filename = newest
+
+    if not os.path.isfile(filename):
+        print(f"File not found: {filename}")
+        return
+
+    print(f"\nAnalyzing file: {filename}\n")
+
+    rows = load_data_file(filename)
+
+    if not rows:
+        print("No data found in file.")
+        return
+
+    print("Detected columns:", ", ".join(rows[0].keys()), "\n")
+
+    ap_status = {}
+    networks_seen = set()
+
+    for row in rows:
+        serial = str(row.get("Serial", "")).strip()
+        model = str(row.get("Model", "")).strip()
+        band = str(row.get("Band", "")).strip()
+        name = str(row.get("AP Name", "")).strip()
+
+        if not serial or not model:
+            continue
+
+        network = extract_network_from_apname(name)
+        networks_seen.add(network)   # <-- FIXED: closing parenthesis added
+
+        if serial not in ap_status:
+            ap_status[serial] = {
+                "name": name or "(Unnamed AP)",
+                "model": model,
+                "network": network,
+                "has_6ghz": False
+            }
+
+        if model_supports_6ghz(model) and band == "6 GHz":
+            ap_status[serial]["has_6ghz"] = True
+
+    # Build missing list
+    missing_list = [
+        ap for ap in ap_status.values()
+        if model_supports_6ghz(ap["model"]) and not ap["has_6ghz"]
+    ]
+
+    # Build summary counts
+    summary = {}
+    for ap in ap_status.values():
+        net = ap["network"]
+        if net not in summary:
+            summary[net] = {
+                "total": 0,
+                "six_capable": 0,
+                "six_missing": 0
+            }
+
+        summary[net]["total"] += 1
+
+        if model_supports_6ghz(ap["model"]):
+            summary[net]["six_capable"] += 1
+            if not ap["has_6ghz"]:
+                summary[net]["six_missing"] += 1
+
+    print("=== Networks Found in File ===")
+    for net in sorted(networks_seen):
+        print(" •", net)
+    print()
+
+    print("=== APs That Support 6 GHz But Are NOT Broadcasting It ===\n")
+    for ap in missing_list:
+        print(f"{ap['network']} — {ap['name']} ({ap['model']})")
+
+    # Create output Excel
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_file = f"6ghz_missing_report_{timestamp}.xlsx"
+
+    wb = Workbook()
+
+    # Summary tab
+    ws_summary = wb.active
+    ws_summary.title = "Summary"
+    ws_summary.append(["Network", "Total APs", "6GHz Capable", "Missing 6GHz"])
+
+    for net, stats in sorted(summary.items()):
+        ws_summary.append([
+            net,
+            stats["total"],
+            stats["six_capable"],
+            stats["six_missing"]
+        ])
+
+    # SUM1 tab (only networks with missing > 0)
+    ws_sum1 = wb.create_sheet("SUM1")
+    ws_sum1.append(["Network", "Missing 6GHz"])
+
+    for net, stats in sorted(summary.items()):
+        if stats["six_missing"] > 0:
+            ws_sum1.append([net, stats["six_missing"]])
+
+    # NetName tab (unique network names)
+    ws_netname = wb.create_sheet("NetName")
+    ws_netname.append(["Network Name"])
+
+    for net in sorted(networks_seen):
+        ws_netname.append([net])
+
+    # Missing APs tab
+    ws_missing = wb.create_sheet("Missing 6GHz APs")
+    ws_missing.append(["AP Name", "Model", "Network", "Status"])
+
+    for ap in missing_list:
+        ws_missing.append([
+            ap["name"],
+            ap["model"],
+            ap["network"],
+            "Missing 6 GHz"
+        ])
+
+    wb.save(output_file)
+
+    print(f"\nExcel report saved as: {output_file}\n")
+
+if __name__ == "__main__":
+    main()
