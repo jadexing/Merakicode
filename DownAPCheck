@@ -1,0 +1,151 @@
+"""
+High-level purpose
+This script connects to the Cisco Meraki Dashboard API and creates an Excel report listing wireless access points (APs) that are not online across all organizations your API key can access.
+
+It only considers devices whose model starts with MR (Meraki MR APs) or CW (Catalyst Wireless / Meraki-managed CW models, depending on inventory naming).
+It skips anything that is online.
+It exports the “down” (offline/alerting/dormant/etc.) APs into meraki_down_aps.xlsx.
+"""
+
+
+import requests
+import time
+from openpyxl import Workbook
+
+BASE_URL = "https://api.meraki.com/api/v1"
+
+
+def meraki_get(url, headers):
+
+    results = []
+
+    while url:
+
+        response = requests.get(url, headers=headers)
+
+        if response.status_code != 200:
+            print("API Error:", response.status_code, response.text)
+            return None
+
+        results += response.json()
+
+        link = response.headers.get("Link")
+
+        if link and 'rel="next"' in link:
+            url = link.split(";")[0].strip("<>")
+        else:
+            url = None
+
+    return results
+
+
+def main():
+
+    start = time.time()
+
+    api_key = input("Enter your Meraki API key: ").strip()
+
+    headers = {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Down APs"
+
+    ws.append([
+        "Organization",
+        "Network",
+        "AP Name",
+        "Model",
+        "Serial",
+        "Status"
+    ])
+
+    print("\nPulling organizations...\n")
+
+    orgs = meraki_get(f"{BASE_URL}/organizations", headers)
+
+    if not orgs:
+        print("No organizations found")
+        return
+
+    total_down = 0
+
+    for org in orgs:
+
+        org_id = org["id"]
+        org_name = org["name"]
+
+        print(f"\nChecking Organization: {org_name}")
+
+        networks = meraki_get(
+            f"{BASE_URL}/organizations/{org_id}/networks",
+            headers
+        )
+
+        network_lookup = {}
+
+        if networks:
+            for net in networks:
+                network_lookup[net["id"]] = net["name"]
+
+        devices = meraki_get(
+            f"{BASE_URL}/organizations/{org_id}/devices/statuses",
+            headers
+        )
+
+        if not devices:
+            continue
+
+        for device in devices:
+
+            model = device.get("model", "")
+
+            if not model.startswith(("MR", "CW")):
+                continue
+
+            status = device.get("status")
+
+            if status == "online":
+                continue
+
+            network_id = device.get("networkId")
+
+            network_name = network_lookup.get(network_id, "Unknown")
+
+            ap_name = device.get("name", "Unnamed")
+
+            serial = device.get("serial")
+
+            print(
+                f"DOWN → {ap_name} | {model} | {network_name} | Status: {status}"
+            )
+
+            ws.append([
+                org_name,
+                network_name,
+                ap_name,
+                model,
+                serial,
+                status
+            ])
+
+            total_down += 1
+
+    filename = "meraki_down_aps.xlsx"
+
+    wb.save(filename)
+
+    runtime = int(time.time() - start)
+
+    print("\n----------------------------------")
+    print(f"Down APs found: {total_down}")
+    print(f"Excel report: {filename}")
+    print(f"Runtime: {runtime} seconds")
+    print("----------------------------------")
+
+
+if __name__ == "__main__":
+    main()
