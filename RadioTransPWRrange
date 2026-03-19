@@ -1,0 +1,147 @@
+"""
+### What this script does
+
+*   Prompts for a **Meraki Dashboard API key**
+*   Lists **organizations** the key can access and lets you select one
+*   Retrieves **all networks** in the selected organization
+*   For each network:
+    *   Retrieves **RF profiles**
+    *   Retrieves **devices**
+    *   Filters for **wireless APs** (MR and CW models)
+    *   Reads **min/max transmit power settings** from the RF profile for:
+        *   2.4 GHz
+        *   5 GHz
+        *   6 GHz (if present)
+*   Prints RF power settings per AP to the console
+*   Exports the results to an Excel file:
+    *   **`Meraki_RF_Power_Audit.xlsx`**
+    *   One row per AP with RF power limits by band
+
+***
+
+### APIs used in this script
+
+*   `GET https://api.meraki.com/api/v1/organizations`
+*   `GET https://api.meraki.com/api/v1/organizations/{orgId}/networks`
+*   `GET https://api.meraki.com/api/v1/networks/{networkId}/wireless/rfProfiles`
+*   `GET https://api.meraki.com/api/v1/networks/{networkId}/devices`
+
+"""
+import requests
+import pandas as pd
+
+BASE_URL = "https://api.meraki.com/api/v1"
+
+def get_headers(api_key):
+    return {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+
+def get_organizations(api_key):
+    url = f"{BASE_URL}/organizations"
+    r = requests.get(url, headers=get_headers(api_key))
+    return r.json()
+
+def choose_org(orgs):
+    if len(orgs) == 1:
+        print(f"\nAuto-selecting organization: {orgs[0]['name']}")
+        return orgs[0]['id']
+
+    print("\nOrganizations:")
+    for i, org in enumerate(orgs):
+        print(f"{i+1}: {org['name']}")
+
+    choice = int(input("Select organization: "))
+    return orgs[choice-1]['id']
+
+def get_networks(api_key, org_id):
+    url = f"{BASE_URL}/organizations/{org_id}/networks"
+    r = requests.get(url, headers=get_headers(api_key))
+    return r.json()
+
+def get_rf_profiles(api_key, network_id):
+    url = f"{BASE_URL}/networks/{network_id}/wireless/rfProfiles"
+    r = requests.get(url, headers=get_headers(api_key))
+    if r.status_code != 200:
+        return []
+    return r.json()
+
+def get_devices(api_key, network_id):
+    url = f"{BASE_URL}/networks/{network_id}/devices"
+    r = requests.get(url, headers=get_headers(api_key))
+    return r.json()
+
+def main():
+
+    api_key = input("Enter your Meraki API key: ")
+
+    orgs = get_organizations(api_key)
+    org_id = choose_org(orgs)
+
+    networks = get_networks(api_key, org_id)
+
+    rows = []
+
+    for network in networks:
+
+        print(f"\nChecking network: {network['name']}")
+
+        rf_profiles = get_rf_profiles(api_key, network['id'])
+        devices = get_devices(api_key, network['id'])
+
+        for device in devices:
+
+            model = device.get("model","")
+
+            if model.startswith("MR") or model.startswith("CW"):
+
+                profile_name = "Unknown"
+
+                if rf_profiles:
+                    profile = rf_profiles[0]
+                    profile_name = profile["name"]
+
+                    two_min = profile.get("twoFourGhzSettings",{}).get("minPower","N/A")
+                    two_max = profile.get("twoFourGhzSettings",{}).get("maxPower","N/A")
+
+                    five_min = profile.get("fiveGhzSettings",{}).get("minPower","N/A")
+                    five_max = profile.get("fiveGhzSettings",{}).get("maxPower","N/A")
+
+                    six_min = profile.get("sixGhzSettings",{}).get("minPower","N/A")
+                    six_max = profile.get("sixGhzSettings",{}).get("maxPower","N/A")
+
+                else:
+                    two_min = two_max = five_min = five_max = six_min = six_max = "N/A"
+
+                row = {
+                    "Network": network["name"],
+                    "AP Name": device.get("name",""),
+                    "Model": model,
+                    "RF Profile": profile_name,
+                    "2.4GHz Min Power": two_min,
+                    "2.4GHz Max Power": two_max,
+                    "5GHz Min Power": five_min,
+                    "5GHz Max Power": five_max,
+                    "6GHz Min Power": six_min,
+                    "6GHz Max Power": six_max
+                }
+
+                rows.append(row)
+
+                print(
+                    f"{device.get('name','')} | "
+                    f"2.4GHz:{two_min}-{two_max} | "
+                    f"5GHz:{five_min}-{five_max} | "
+                    f"6GHz:{six_min}-{six_max}"
+                )
+
+    df = pd.DataFrame(rows)
+
+    filename = "Meraki_RF_Power_Audit.xlsx"
+    df.to_excel(filename, index=False)
+
+    print(f"\nSpreadsheet exported: {filename}")
+
+if __name__ == "__main__":
+    main()
