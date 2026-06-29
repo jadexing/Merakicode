@@ -1,82 +1,381 @@
-#This code specifically displays networks in an org, alphabetically.
-#Completes a user count
-# Runs /organizations/{org_id}/networks
-# @jamiegprice #WiFi Cool Cats (blog)
+"""
+Meraki Live User Count Report
+
+- Displays networks alphabetically
+- Counts currently connected clients
+- Uses:
+    /organizations/{org_id}/networks
+    /networks/{network_id}/clients
+
+@jamiegprice
+WiFi Cool Cats
+CWNE #510
+"""
 
 import requests
 import datetime
+import time
 
-BASE_URL = 'https://api.meraki.com/api/v1/'
+
+BASE_URL = "https://api.meraki.com/api/v1/"
+
+
+# -----------------------------------
+# API Key
+# -----------------------------------
 
 def get_api_key():
-    return input("Enter your Meraki API key: ")
+
+    return input(
+        "Enter your Meraki API key: "
+    )
+
+
+
+# -----------------------------------
+# Organizations
+# -----------------------------------
 
 def get_organizations(api_key):
+
     headers = {
-        'X-Cisco-Meraki-API-Key': api_key,
+        "X-Cisco-Meraki-API-Key": api_key
     }
-    try:
-        response = requests.get(BASE_URL + 'organizations', headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error occurred during API call: {e}")
-        return []
 
-def display_organizations(organizations):
-    print("Organizations:")
-    for idx, org in enumerate(organizations, 1):
-        print(f"{idx}. {org['name']} (ID: {org['id']})")
-    print()
+    response = requests.get(
+        BASE_URL + "organizations",
+        headers=headers
+    )
 
-def select_organization(organizations):
-    if len(organizations) == 1:
-        print(f"Only one organization found: {organizations[0]['name']} (ID: {organizations[0]['id']})")
-        return organizations[0]['id']
-    else:
-        org_idx = int(input("Enter the number of the organization: "))
-        return organizations[org_idx - 1]['id']
+    response.raise_for_status()
+
+    return response.json()
+
+
+
+def select_organization(orgs):
+
+    if len(orgs) == 1:
+
+        print(
+            f"\nUsing organization: {orgs[0]['name']}"
+        )
+
+        return orgs[0]["id"]
+
+
+    print("\nOrganizations:")
+
+    for i, org in enumerate(orgs, 1):
+
+        print(
+            f"{i}. {org['name']}"
+        )
+
+
+    choice = int(
+        input(
+            "\nSelect organization: "
+        )
+    )
+
+
+    return orgs[
+        choice - 1
+    ]["id"]
+
+
+
+# -----------------------------------
+# Networks
+# -----------------------------------
 
 def get_networks(api_key, org_id):
+
     headers = {
-        'X-Cisco-Meraki-API-Key': api_key,
+        "X-Cisco-Meraki-API-Key": api_key
     }
-    try:
-        response = requests.get(BASE_URL + f'organizations/{org_id}/networks', headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error occurred during API call: {e}")
-        return []
+
+
+    response = requests.get(
+
+        BASE_URL +
+        f"organizations/{org_id}/networks",
+
+        headers=headers
+
+    )
+
+
+    response.raise_for_status()
+
+    return response.json()
+
+
 
 def display_networks(networks):
-    print("Networks:")
-    sorted_networks = sorted(networks, key=lambda x: x['name'].lower())
-    for idx, network in enumerate(sorted_networks, 1):
-        print(f"{idx}. {network['name']} (ID: {network['id']})")
-    print()
+
+    print("\nNetworks:")
+
+    networks = sorted(
+        networks,
+        key=lambda x: x["name"].lower()
+    )
+
+
+    for i, network in enumerate(networks, 1):
+
+        print(
+            f"{i}. {network['name']}"
+        )
+
+
+    return networks
+
+
+
+# -----------------------------------
+# Live Clients
+# -----------------------------------
+
+def get_live_clients(
+        api_key,
+        network_id
+):
+
+
+    headers = {
+
+        "X-Cisco-Meraki-API-Key":
+            api_key
+
+    }
+
+
+    url = (
+
+        BASE_URL +
+
+        f"networks/{network_id}/clients"
+
+    )
+
+
+    params = {
+
+        "perPage": 1000,
+
+        "timespan": 300
+
+    }
+
+
+    clients = []
+
+
+    while True:
+
+
+        response = requests.get(
+
+            url,
+
+            headers=headers,
+
+            params=params
+
+        )
+
+
+        if response.status_code != 200:
+
+            print(
+                f"Client lookup failed "
+                f"{network_id}"
+            )
+
+            print(
+                response.text
+            )
+
+            break
+
+
+
+        data = response.json()
+
+
+        for client in data:
+
+            # Current online clients only
+
+            if client.get("status") == "Online":
+
+                clients.append(client)
+
+
+
+        if "next" in response.links:
+
+            url = response.links[
+                "next"
+            ]["url"]
+
+            time.sleep(.5)
+
+
+        else:
+
+            break
+
+
+
+    return clients
+
+
+
+# -----------------------------------
+# Main
+# -----------------------------------
 
 def main():
+
     start_time = datetime.datetime.now()
 
+
     api_key = get_api_key()
-    organizations = get_organizations(api_key)
-    if not organizations:
-        return
-    display_organizations(organizations)
 
-    selected_org_id = select_organization(organizations)
 
-    networks = get_networks(api_key, selected_org_id)
-    if not networks:
-        return
-    display_networks(networks)
+    organizations = get_organizations(
+        api_key
+    )
+
+
+    org_id = select_organization(
+        organizations
+    )
+
+
+    networks = get_networks(
+        api_key,
+        org_id
+    )
+
+
+    networks = display_networks(
+        networks
+    )
+
+
+    choice = input(
+
+        "\nProcess all networks? (y/n): "
+
+    ).lower()
+
+
+
+    if choice == "n":
+
+        number = int(
+
+            input(
+                "Enter network number: "
+            )
+
+        )
+
+
+        networks = [
+
+            networks[number - 1]
+
+        ]
+
+
+
+    print(
+        "\nGathering live client counts..."
+    )
+
+
+    total_users = 0
+
+
+    print(
+        "\nLive User Counts"
+    )
+
+    print(
+        "----------------"
+    )
+
+
+    for network in networks:
+
+
+        print(
+            f"Checking {network['name']}..."
+        )
+
+
+        clients = get_live_clients(
+
+            api_key,
+
+            network["id"]
+
+        )
+
+
+        count = len(clients)
+
+
+        total_users += count
+
+
+        print(
+
+            f"{network['name']}: "
+            f"{count} users"
+
+        )
+
+
+        time.sleep(1)
+
+
+
+    print(
+        "\n----------------"
+    )
+
+
+    print(
+        f"TOTAL LIVE USERS: {total_users}"
+    )
+
+
 
     end_time = datetime.datetime.now()
-    duration = end_time - start_time
-    duration_minutes = duration.total_seconds() / 60
 
-    print(f"Job completed in {duration_minutes:.2f} minutes.")
+
+    runtime = (
+
+        end_time - start_time
+
+    ).total_seconds() / 60
+
+
+    print(
+
+        f"\nJob completed in "
+        f"{runtime:.2f} minutes."
+
+    )
+
+
 
 if __name__ == "__main__":
+
     main()
