@@ -16,183 +16,563 @@ If the script is run, and the file already exists, it adds a tab.
 
 Twitter @jamiegprice https://jamiegprice.substack.com/ CWNE #510
 """
+"""
+Meraki Unique Client Count Report
+
+Features:
+- Organization selection
+- All networks or selected network
+- Date formats:
+    MMDDYYYY
+    MM-DD-YYYY
+    YYYY-MM-DD
+- Unique client counting
+- Excel reporting
+- API retry handling
+- Meraki rate-limit protection
+
+CWNE #510
+"""
+
 
 import requests
 import time
 import pandas as pd
 import os
+
 from datetime import datetime
 
-# Function to retrieve live clients from a specific network with pagination
-def get_live_clients(api_key, network_id):
-    url = f"https://api.meraki.com/api/v1/networks/{network_id}/clients"
-    headers = {"X-Cisco-Meraki-API-Key": api_key}
-    params = {"perPage": 100}
-    clients_list = []
 
-    while True:
-        response = requests.get(url, headers=headers, params=params)
+# -------------------------------------------------
+# Meraki API Session
+# -------------------------------------------------
+
+session = requests.Session()
+
+
+# -------------------------------------------------
+# Date Parser
+# -------------------------------------------------
+
+def parse_date(date_string):
+
+    formats = [
+        "%m%d%Y",
+        "%m-%d-%Y",
+        "%Y-%m-%d"
+    ]
+
+    for fmt in formats:
+
+        try:
+            return datetime.strptime(
+                date_string,
+                fmt
+            )
+
+        except ValueError:
+            continue
+
+
+    raise ValueError(
+        "Invalid date format."
+    )
+
+
+
+# -------------------------------------------------
+# Meraki API Request with Retry Logic
+# -------------------------------------------------
+
+def meraki_get(
+        url,
+        headers,
+        params=None,
+        retries=5
+):
+
+    for attempt in range(retries):
+
+        response = session.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=30
+        )
+
+
+        # Success
         if response.status_code == 200:
-            clients_data = response.json()
-            clients_list.extend(client for client in clients_data if client.get('status') == 'Online')
-            if 'next' in response.links:
-                url = response.links['next']['url']
-                time.sleep(0.5)  # Throttle the requests to avoid rate-limiting
-            else:
-                break
-        else:
-            print(f"Error: Unable to fetch clients for Network ID: {network_id}")
-            break
+            return response
 
-    return clients_list
 
-# Function to retrieve unique clients within a specific date range (start date to end date)
-def get_unique_clients(api_key, network_id, start_date, end_date):
-    url = f"https://api.meraki.com/api/v1/networks/{network_id}/clients"
-    headers = {"X-Cisco-Meraki-API-Key": api_key}
-    params = {
-        "perPage": 100,
-        "timespan": int((end_date - start_date).total_seconds())  # Timespan in seconds
+        # Rate limit
+        if response.status_code == 429:
+
+            retry_after = int(
+                response.headers.get(
+                    "Retry-After",
+                    5
+                )
+            )
+
+            print(
+                f"Rate limited. "
+                f"Waiting {retry_after} seconds..."
+            )
+
+            time.sleep(
+                retry_after
+            )
+
+            continue
+
+
+        # Temporary server errors
+        if response.status_code in [
+            500,
+            502,
+            503,
+            504
+        ]:
+
+            wait = 2 ** attempt
+
+            print(
+                f"Temporary Meraki error "
+                f"{response.status_code}. "
+                f"Retrying in {wait} seconds..."
+            )
+
+            time.sleep(
+                wait
+            )
+
+            continue
+
+
+        # Other errors
+        print(
+            "\nMeraki API Error"
+        )
+
+        print(
+            response.status_code
+        )
+
+        print(
+            response.text
+        )
+
+        return None
+
+
+    print(
+        "Maximum retries exceeded."
+    )
+
+    return None
+
+
+
+# -------------------------------------------------
+# Get Unique Clients
+# -------------------------------------------------
+
+def get_unique_clients(
+        api_key,
+        network_id,
+        start_date,
+        end_date
+):
+
+
+    url = (
+        f"https://api.meraki.com/api/v1/"
+        f"networks/{network_id}/clients"
+    )
+
+
+    headers = {
+        "X-Cisco-Meraki-API-Key": api_key
     }
-    clients_list = []
+
+
+    timespan = int(
+        (
+            end_date-start_date
+        ).total_seconds()
+    )
+
+
+    # Same day = 24 hours
+    if timespan == 0:
+        timespan = 86400
+
+
+
+    params = {
+
+        "perPage": 1000,
+
+        "timespan": timespan
+
+    }
+
+
+
+    clients = []
+
 
     while True:
-        response = requests.get(url, headers=headers, params=params)
-        if response.status_code == 200:
-            clients_data = response.json()
-            clients_list.extend(client['mac'] for client in clients_data)
-            if 'next' in response.links:
-                url = response.links['next']['url']
-                time.sleep(0.5)  # Throttle the requests to avoid rate-limiting
-            else:
-                break
-        else:
-            print(f"Error: Unable to fetch unique clients for Network ID: {network_id}")
+
+
+        response = meraki_get(
+            url,
+            headers,
+            params
+        )
+
+
+        if response is None:
+
             break
 
-    return list(set(clients_list))  # Ensure unique clients by using a set
 
-# Meraki API Key input
-api_key = input("Enter your Meraki API key: ")
 
-# Retrieve organizations associated with the API key
-url = "https://api.meraki.com/api/v1/organizations"
-headers = {"X-Cisco-Meraki-API-Key": api_key}
-response = requests.get(url, headers=headers)
+        data = response.json()
 
-if response.status_code == 200:
-    orgs_data = response.json()
 
-    # Automatically select the first org if only one exists
-    if len(orgs_data) == 1:
-        print("\nOnly one organization found, auto-selecting.")
-        org_number = orgs_data[0]['id']  # Automatically select the organization
-    else:
-        # Ask user to select the organization
-        print("\nOrganizations associated with your API key:")
-        for index, org in enumerate(orgs_data, start=1):
-            print(f"{index}. {org['name']} (Organization ID: {org['id']})")
 
-        while True:
-            try:
-                org_number = int(input("\nEnter the number of the organization you want to use: "))
-                if 0 < org_number <= len(orgs_data):
-                    org_number = orgs_data[org_number - 1]['id']
-                    break
-                else:
-                    print("Invalid input. Please enter a valid number.")
-            except ValueError:
-                print("Invalid input. Please enter a valid number.")
+        clients.extend(
 
-    # Retrieve and display the networks associated with the selected organization
-    url = f"https://api.meraki.com/api/v1/organizations/{org_number}/networks"
-    response = requests.get(url, headers=headers)
-    
-    if response.status_code == 200:
-        networks_data = response.json()
-        print("\nNetworks associated with the organization:")
-        for index, network in enumerate(networks_data, start=1):
-            print(f"{index}. {network['name']} (Network ID: {network['id']})")
+            client.get("mac")
 
-        # Ask the user if they want to process all networks or just one
-        while True:
-            all_networks = input("\nDo you want to process all networks? (y/n): ").strip().lower()
-            if all_networks in ['y', 'n']:
-                break
-            else:
-                print("Invalid input. Please enter 'y' for yes or 'n' for no.")
+            for client in data
 
-        # If user selects 'n', ask to choose a network by index number
-        if all_networks == 'n':
-            while True:
-                try:
-                    selected_network = int(input("\nEnter the index number of the network you want to process: "))
-                    if 0 < selected_network <= len(networks_data):
-                        network_id = networks_data[selected_network - 1]['id']
-                        network_name = networks_data[selected_network - 1]['name']
-                        break
-                    else:
-                        print("Invalid input. Please enter a valid index number.")
-                except ValueError:
-                    print("Invalid input. Please enter a valid index number.")
+            if client.get("mac")
 
-        # Date range input
-        print("\nPlease enter the date range for unique clients.")
-        start_date_str = input("Enter start date (MM-DD-YYYY): ")
-        end_date_str = input("Enter end date (MM-DD-YYYY): ")
+        )
 
-        # Convert date strings to datetime objects
-        start_date = datetime.strptime(start_date_str, "%m-%d-%Y")
-        end_date = datetime.strptime(end_date_str, "%m-%d-%Y")
-        
-        # Warning about the time it will take to gather data
-        print("\nIt will take some time to gather this data. Please wait.")
 
-        # Initialize dictionaries to store client counts
-        unique_clients_per_network = {}
-        total_unique_clients = 0
 
-        if all_networks == 'y':
-            # Process all networks
-            for network in networks_data:
-                network_id = network['id']
-                network_name = network['name']
-                print(f"\nProcessing unique clients for network: {network_name}")
-                unique_clients = get_unique_clients(api_key, network_id, start_date, end_date)
-                unique_clients_per_network[network_name] = len(unique_clients)
-                total_unique_clients += len(unique_clients)
-                print(f"{network_name}: Unique Clients - {len(unique_clients)}")
+        # Pagination
+
+        if "next" in response.links:
+
+            url = response.links[
+                "next"
+            ]["url"]
+
+
+            print(
+                "  Getting next page..."
+            )
+
+
+            time.sleep(
+                0.5
+            )
+
+
         else:
-            # Process one network selected by the user
-            print(f"\nProcessing unique clients for network: {network_name}")
-            unique_clients = get_unique_clients(api_key, network_id, start_date, end_date)
-            unique_clients_per_network[network_name] = len(unique_clients)
-            total_unique_clients += len(unique_clients)
-            print(f"{network_name}: Unique Clients - {len(unique_clients)}")
 
-        # Display total unique client count
-        print("\nTotal Unique Clients:", total_unique_clients)
+            break
 
-        # Prepare data to be saved
-        df = pd.DataFrame(list(unique_clients_per_network.items()), columns=['Network', 'Unique Clients Count'])
-        
-        # Add the date and time of the run as a column in the DataFrame
-        current_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M")  # Format the date and time as YYYY-MM-DD_HH-MM
-        df['Date and Time of Run'] = current_date_time
 
-        # Check if the file already exists
-        file_name = "meraki_unique_client_counts.xlsx"
-        if os.path.exists(file_name):
-            # If the file exists, load the existing Excel file and add a new sheet with the current date and time
-            with pd.ExcelWriter(file_name, engine='openpyxl', mode='a') as writer:
-                df.to_excel(writer, sheet_name=current_date_time, index=False)
-            print(f"\nData added to existing file with sheet name '{current_date_time}'")
-        else:
-            # If the file doesn't exist, create a new one with the data
-            df.to_excel(file_name, index=False)
-            print("\nData saved to new file 'meraki_unique_client_counts.xlsx'")
 
-    else:
-        print("Unable to fetch networks. Please check your API key and organization number.")
+    return list(
+        set(clients)
+    )
+
+
+
+# -------------------------------------------------
+# Main
+# -------------------------------------------------
+
+
+api_key = input(
+    "Enter Meraki API key: "
+)
+
+
+
+headers = {
+
+    "X-Cisco-Meraki-API-Key":
+        api_key
+
+}
+
+
+
+# Organizations
+
+response = meraki_get(
+
+    "https://api.meraki.com/api/v1/organizations",
+
+    headers
+
+)
+
+
+if not response:
+
+    exit()
+
+
+
+organizations = response.json()
+
+
+
+if len(organizations) == 1:
+
+
+    org_id = organizations[0]["id"]
+
+
 else:
-    print("Unable to fetch organizations. Please check your API key.")
+
+
+    print(
+        "\nOrganizations:"
+    )
+
+
+    for i, org in enumerate(
+        organizations,
+        1
+    ):
+
+        print(
+            f"{i}. {org['name']}"
+        )
+
+
+
+    choice = int(
+        input(
+            "Select organization: "
+        )
+    )
+
+
+    org_id = organizations[
+        choice-1
+    ]["id"]
+
+
+
+
+# Networks
+
+url = (
+
+    f"https://api.meraki.com/api/v1/"
+    f"organizations/{org_id}/networks"
+
+)
+
+
+
+response = meraki_get(
+    url,
+    headers
+)
+
+
+networks = response.json()
+
+
+
+for i, network in enumerate(
+    networks,
+    1
+):
+
+    print(
+        f"{i}. {network['name']}"
+    )
+
+
+
+all_networks = input(
+
+    "\nProcess all networks? (y/n): "
+
+).lower()
+
+
+
+if all_networks == "n":
+
+    number = int(
+        input(
+            "Network number: "
+        )
+    )
+
+
+    networks = [
+        networks[number-1]
+    ]
+
+
+
+# Dates
+
+start = parse_date(
+
+    input(
+        "\nStart date: "
+    )
+
+)
+
+
+end = parse_date(
+
+    input(
+        "End date: "
+    )
+
+)
+
+
+
+results = {}
+
+total = 0
+
+
+
+for network in networks:
+
+
+    print(
+        "\nProcessing:",
+        network["name"]
+    )
+
+
+    clients = get_unique_clients(
+
+        api_key,
+
+        network["id"],
+
+        start,
+
+        end
+
+    )
+
+
+    count = len(clients)
+
+
+    results[
+        network["name"]
+    ] = count
+
+
+    total += count
+
+
+
+    print(
+        "Unique Clients:",
+        count
+    )
+
+
+    # protect API
+
+    time.sleep(
+        1
+    )
+
+
+
+print(
+    "\nTOTAL UNIQUE CLIENTS:",
+    total
+)
+
+
+
+# Excel
+
+
+df = pd.DataFrame(
+
+    results.items(),
+
+    columns=[
+        "Network",
+        "Unique Clients"
+    ]
+
+)
+
+
+timestamp = datetime.now().strftime(
+
+    "%Y-%m-%d_%H-%M-%S"
+
+)
+
+
+df["Run Time"] = timestamp
+
+
+
+filename = (
+    "meraki_unique_client_counts.xlsx"
+)
+
+
+
+if os.path.exists(filename):
+
+
+    with pd.ExcelWriter(
+
+        filename,
+
+        engine="openpyxl",
+
+        mode="a"
+
+    ) as writer:
+
+
+        df.to_excel(
+
+            writer,
+
+            sheet_name=timestamp,
+
+            index=False
+
+        )
+
+
+else:
+
+
+    df.to_excel(
+
+        filename,
+
+        index=False
+
+    )
+
+
+print(
+    "\nComplete."
+)
