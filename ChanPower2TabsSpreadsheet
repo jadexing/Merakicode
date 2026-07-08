@@ -1,0 +1,421 @@
+"""
+Meraki RF Power + Live Channel Audit
+
+APIs used:
+
+GET /organizations
+GET /organizations/{orgId}/networks
+GET /networks/{networkId}/wireless/rfProfiles
+GET /networks/{networkId}/devices
+GET /devices/{serial}/wireless/radio/status   <-- LIVE CHANNELS
+
+This script is essentially an organization-wide RF audit tool that produces:
+
+Configured RF power limits (from RF Profiles)
+Actual live radio channels/power/widths (from AP radio status)
+
+It's very useful for validating channel plans, power settings, and 6 GHz deployments, 
+but the RF Profile section is potentially inaccurate because it assumes every AP uses 
+the first RF profile returned by the API rather than the profile actually assigned to that AP.
+"""
+
+import requests
+import pandas as pd
+import time
+
+
+BASE_URL = "https://api.meraki.com/api/v1"
+
+
+def get_headers(api_key):
+
+    return {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+
+
+
+def api_get(api_key, url):
+
+    r = requests.get(
+        url,
+        headers=get_headers(api_key)
+    )
+
+    if r.status_code != 200:
+
+        print(
+            f"API Error {r.status_code}: {url}"
+        )
+
+        return []
+
+    return r.json()
+
+
+
+def get_organizations(api_key):
+
+    return api_get(
+        api_key,
+        f"{BASE_URL}/organizations"
+    )
+
+
+
+def choose_org(orgs):
+
+    if len(orgs) == 1:
+
+        print(
+            f"\nUsing organization: {orgs[0]['name']}"
+        )
+
+        return orgs[0]["id"]
+
+
+    print("\nOrganizations:")
+
+    for i, org in enumerate(orgs):
+
+        print(
+            f"{i+1}: {org['name']}"
+        )
+
+
+    choice = int(
+        input(
+            "Select organization: "
+        )
+    )
+
+    return orgs[choice-1]["id"]
+
+
+
+def get_networks(api_key, org_id):
+
+    return api_get(
+        api_key,
+        f"{BASE_URL}/organizations/{org_id}/networks"
+    )
+
+
+
+def get_rf_profiles(api_key, network_id):
+
+    return api_get(
+        api_key,
+        f"{BASE_URL}/networks/{network_id}/wireless/rfProfiles"
+    )
+
+
+
+def get_devices(api_key, network_id):
+
+    return api_get(
+        api_key,
+        f"{BASE_URL}/networks/{network_id}/devices"
+    )
+
+
+
+# NEW API
+def get_radio_status(api_key, serial):
+
+    return api_get(
+        api_key,
+        f"{BASE_URL}/devices/{serial}/wireless/radio/status"
+    )
+
+
+
+def main():
+
+    start = time.time()
+
+
+    api_key = input(
+        "Enter your Meraki API key: "
+    ).strip()
+
+
+    orgs = get_organizations(api_key)
+
+
+    org_id = choose_org(orgs)
+
+
+
+    networks = get_networks(
+        api_key,
+        org_id
+    )
+
+
+    power_rows = []
+
+    channel_rows = []
+
+
+
+    for network in networks:
+
+
+        print(
+            f"\nChecking network: {network['name']}"
+        )
+
+
+        rf_profiles = get_rf_profiles(
+            api_key,
+            network["id"]
+        )
+
+
+        devices = get_devices(
+            api_key,
+            network["id"]
+        )
+
+
+
+        for device in devices:
+
+
+            model = device.get(
+                "model",
+                ""
+            )
+
+
+            if not (
+                model.startswith("MR")
+                or
+                model.startswith("CW")
+            ):
+
+                continue
+
+
+
+            serial = device.get(
+                "serial"
+            )
+
+
+
+            #
+            # RF PROFILE
+            #
+
+            if rf_profiles:
+
+                profile = rf_profiles[0]
+
+                profile_name = profile["name"]
+
+
+                two = profile.get(
+                    "twoFourGhzSettings",
+                    {}
+                )
+
+                five = profile.get(
+                    "fiveGhzSettings",
+                    {}
+                )
+
+                six = profile.get(
+                    "sixGhzSettings",
+                    {}
+                )
+
+
+            else:
+
+                profile_name = "Unknown"
+
+                two = {}
+                five = {}
+                six = {}
+
+
+
+            power_rows.append(
+                {
+
+                "Network":
+                    network["name"],
+
+                "AP Name":
+                    device.get(
+                        "name",
+                        ""
+                    ),
+
+                "Model":
+                    model,
+
+                "RF Profile":
+                    profile_name,
+
+                "2.4 Min Power":
+                    two.get(
+                        "minPower",
+                        ""
+                    ),
+
+                "2.4 Max Power":
+                    two.get(
+                        "maxPower",
+                        ""
+                    ),
+
+                "5 Min Power":
+                    five.get(
+                        "minPower",
+                        ""
+                    ),
+
+                "5 Max Power":
+                    five.get(
+                        "maxPower",
+                        ""
+                    ),
+
+                "6 Min Power":
+                    six.get(
+                        "minPower",
+                        ""
+                    ),
+
+                "6 Max Power":
+                    six.get(
+                        "maxPower",
+                        ""
+                    )
+
+                }
+            )
+
+
+
+            #
+            # LIVE RADIO STATUS
+            #
+
+            radio_status = get_radio_status(
+                api_key,
+                serial
+            )
+
+
+            for radio in radio_status:
+
+
+                channel_rows.append(
+                    {
+
+                    "Network":
+                        network["name"],
+
+                    "AP Name":
+                        device.get(
+                            "name",
+                            ""
+                        ),
+
+                    "Model":
+                        model,
+
+                    "Serial":
+                        serial,
+
+                    "Band":
+                        radio.get(
+                            "band",
+                            ""
+                        ),
+
+                    "Channel":
+                        radio.get(
+                            "channel",
+                            ""
+                        ),
+
+                    "Channel Width":
+                        radio.get(
+                            "width",
+                            ""
+                        ),
+
+                    "Power":
+                        radio.get(
+                            "power",
+                            ""
+                        ),
+
+                    "Status":
+                        radio.get(
+                            "status",
+                            ""
+                        )
+
+                    }
+                )
+
+
+
+    #
+    # Excel Output
+    #
+
+    filename = (
+        "Meraki_RF_Power_and_Channel_Audit.xlsx"
+    )
+
+
+    with pd.ExcelWriter(filename) as writer:
+
+
+        pd.DataFrame(
+            power_rows
+        ).to_excel(
+            writer,
+            sheet_name="RF Power Audit",
+            index=False
+        )
+
+
+        pd.DataFrame(
+            channel_rows
+        ).to_excel(
+            writer,
+            sheet_name="Live Radio Channels",
+            index=False
+        )
+
+
+
+    runtime = time.time() - start
+
+
+    print(
+        "\nReport created:"
+    )
+
+    print(
+        filename
+    )
+
+    print(
+        f"Runtime: {runtime:.2f} seconds"
+    )
+
+
+
+if __name__ == "__main__":
+
+    main()
